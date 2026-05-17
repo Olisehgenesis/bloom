@@ -330,6 +330,16 @@ export default function StreamPage() {
   const { allowance }    = useTokenAllowance(token.address as Address, address as Address | undefined);
   const needsApproval    = allowance < (amount ? parseUnits(amount, token.decimals) : 0n);
 
+  // Token balance guard — prevents deposit for more than the user holds
+  const { data: tokenBalData } = useReadContract({
+    address: token.address as Address,
+    abi:     ERC20_ABI,
+    functionName: "balanceOf",
+    args:    [address!],
+    query:   { enabled: !!address },
+  });
+  const tokenBalance = (tokenBalData as bigint | undefined) ?? 0n;
+
   const recipient = (recipientMode === "my" ? (address ?? "") : customAddr) as Address;
   const isValidRecipient = recipientMode === "my" ? !!address : isAddress(customAddr);
 
@@ -342,8 +352,9 @@ export default function StreamPage() {
 
   const amountBig  = amount ? parseUnits(amount, token.decimals) : 0n;
   const belowMin   = gdTotal > 0 && minWholeGD > 0 && gdTotal < minWholeGD;
+  const insufficientBalance = !useExistingBalance && amountBig > 0n && tokenBalance > 0n && amountBig > tokenBalance;
 
-  const canSubmitDeposit = isConnected && amountBig > 0n && !belowMin && bloom.step === "idle";
+  const canSubmitDeposit = isConnected && amountBig > 0n && !belowMin && !insufficientBalance && bloom.step === "idle";
   const canSubmitStream  = isConnected && isValidRecipient && !recipientTaken && !belowMin && bloom.step === "idle";
   const canSubmit = useExistingBalance
     ? canSubmitStream && hasGDBalance
@@ -595,6 +606,17 @@ export default function StreamPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Insufficient balance warning */}
+                {insufficientBalance && (
+                  <motion.div initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+                    className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2 mt-2">
+                    <AlertCircle size={13} className="text-red-500 flex-shrink-0" />
+                    <span className="text-[12px] text-red-600 font-medium">
+                      Insufficient {token.symbol} balance
+                    </span>
+                  </motion.div>
+                )}
 
                 {/* Split deposit toggle */}
                 <div className="mt-3 pt-3 border-t border-[#F0F4F0]">

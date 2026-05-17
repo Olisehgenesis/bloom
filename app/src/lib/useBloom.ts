@@ -500,7 +500,10 @@ export function useBloomWrite() {
   function reset() { setStep("idle"); setError(null); }
 
   async function _wait(hash: `0x${string}`) {
-    await publicClient!.waitForTransactionReceipt({ hash });
+    const receipt = await publicClient!.waitForTransactionReceipt({ hash });
+    if (receipt.status === "reverted") {
+      throw new Error("Transaction reverted on-chain");
+    }
   }
 
   function _catch(e: unknown) {

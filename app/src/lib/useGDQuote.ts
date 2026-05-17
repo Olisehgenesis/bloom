@@ -1,5 +1,5 @@
 "use client";
-import { useReadContract, useReadContracts } from "wagmi";
+import { useReadContracts } from "wagmi";
 import { GOOD_DOLLAR, CELO_TOKENS } from "./web3";
 
 // ─── Addresses ────────────────────────────────────────────────────────────────
@@ -49,6 +49,16 @@ const POOL_SLOT0_ABI = [
   },
 ] as const;
 
+const POOL_LIQUIDITY_ABI = [
+  {
+    name: "liquidity",
+    type: "function",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "uint128" }],
+  },
+] as const;
+
 // ─── Math ─────────────────────────────────────────────────────────────────────
 
 const Q192  = 2n ** 192n;
@@ -85,19 +95,50 @@ export interface GDQuote {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
+// Helper: extract pool address from a useReadContracts result item, or null
+type ContractResult = { status: string; result?: unknown };
+
+function poolAt(
+  data: readonly ContractResult[] | undefined,
+  i: number,
+): `0x${string}` | null {
+  const r = data?.[i];
+  return r?.status === "success" && r.result !== ZERO_ADDR
+    ? (r.result as `0x${string}`)
+    : null;
+}
+
+// Helper: true if a slot0 result has sqrtPriceX96 > 0 AND a liquidity result has liquidity > 0
+function poolHasLiquidity(
+  slot0s: readonly ContractResult[] | undefined,
+  liquids: readonly ContractResult[] | undefined,
+  i: number,
+): boolean {
+  const s = slot0s?.[i];
+  const l = liquids?.[i];
+  if (s?.status !== "success" || l?.status !== "success") return false;
+  const sqrtPrice = (s.result as readonly [bigint, ...unknown[]])[0];
+  const liq       = l.result as bigint;
+  return sqrtPrice > 0n && liq > 0n;
+}
+
 /**
  * Returns a live G$/tokenIn price quote by probing V3 factory pools.
  *
+ * For each candidate pool, validates that it is:
+ *   • deployed (factory.getPool returns non-zero address)
+ *   • initialized (slot0.sqrtPriceX96 > 0)
+ *   • liquid     (pool.liquidity() > 0 — skips empty/dust pools)
+ *
  * Strategy:
- *  1. Direct: probe factory.getPool(tokenIn, GD, fee) for all fee tiers.
- *  2. Multi-hop (non-CELO only): if no direct pool found, probe
- *     factory.getPool(tokenIn, CELO, fee) × factory.getPool(CELO, GD, fee).
+ *  1. Direct: probe all 4 fee tiers for tokenIn/G$ pool.
+ *  2. Multi-hop (non-CELO only): tokenIn → CELO → G$.
  */
 export function useGDQuote(tokenAddress: string): GDQuote {
   const addr   = tokenAddress as `0x${string}`;
   const isCELO = addr.toLowerCase() === CELO_ADDRESS.toLowerCase();
 
-  // ── Step 1: Direct pool addresses — tokenIn/GD ──────────────────────────
+  // ── Step 1: All direct pool addresses (tokenIn/GD) ───────────────────────
   const { data: directPools, isLoading: directPoolsLoading } = useReadContracts({
     contracts: FEE_TIERS.map(fee => ({
       address:      V3_FACTORY,
@@ -107,20 +148,43 @@ export function useGDQuote(tokenAddress: string): GDQuote {
     })),
   });
 
-  const directIdx  = directPools?.findIndex(r => r.status === "success" && r.result !== ZERO_ADDR) ?? -1;
-  const directAddr = directIdx !== -1 ? (directPools![directIdx].result as `0x${string}`) : undefined;
+  const directAddrs = FEE_TIERS.map((_, i) => poolAt(directPools, i));
+  const anyDirect   = directAddrs.some(Boolean);
 
-  // ── Step 2: slot0 for the direct pool ────────────────────────────────────
-  const { data: directSlot0, isLoading: directSlotLoading } = useReadContract({
-    address:      directAddr,
-    abi:          POOL_SLOT0_ABI,
-    functionName: "slot0",
-    query:        { enabled: !!directAddr },
+  // ── Step 2: slot0 + liquidity for ALL direct pool candidates ─────────────
+  const { data: directSlot0s, isLoading: directSlot0sLoading } = useReadContracts({
+    contracts: directAddrs.map(a => ({
+      address:      (a ?? ZERO_ADDR) as `0x${string}`,
+      abi:          POOL_SLOT0_ABI,
+      functionName: "slot0" as const,
+    })),
+    query: { enabled: anyDirect },
   });
 
-  // ── Step 3: Multihop probing — only for non-CELO when no direct pool ─────
-  const probeMultihop = !isCELO && !directPoolsLoading && !directAddr;
+  const { data: directLiquids, isLoading: directLiquidsLoading } = useReadContracts({
+    contracts: directAddrs.map(a => ({
+      address:      (a ?? ZERO_ADDR) as `0x${string}`,
+      abi:          POOL_LIQUIDITY_ABI,
+      functionName: "liquidity" as const,
+    })),
+    query: { enabled: anyDirect },
+  });
 
+  // First direct pool that is deployed + initialized + liquid
+  const directIdx = directAddrs.findIndex(
+    (a, i) => a !== null && poolHasLiquidity(directSlot0s, directLiquids, i),
+  );
+  const directAddr  = directIdx !== -1 ? directAddrs[directIdx] : undefined;
+  const directSlot0 = directIdx !== -1
+    ? (directSlot0s?.[directIdx]?.result as readonly [bigint, ...unknown[]] | undefined)
+    : undefined;
+
+  // ── Step 3: Multihop probing — non-CELO, only after direct fully resolved ─
+  const directFullyLoaded =
+    !directPoolsLoading && (!anyDirect || (!directSlot0sLoading && !directLiquidsLoading));
+  const probeMultihop = !isCELO && directFullyLoaded && !directAddr;
+
+  // All CELO/GD pool addresses
   const { data: celoGdPools, isLoading: celoGdPoolsLoading } = useReadContracts({
     contracts: FEE_TIERS.map(fee => ({
       address:      V3_FACTORY,
@@ -131,6 +195,7 @@ export function useGDQuote(tokenAddress: string): GDQuote {
     query: { enabled: probeMultihop },
   });
 
+  // All tokenIn/CELO pool addresses
   const { data: tokenCeloPools, isLoading: tokenCeloPoolsLoading } = useReadContracts({
     contracts: FEE_TIERS.map(fee => ({
       address:      V3_FACTORY,
@@ -141,42 +206,80 @@ export function useGDQuote(tokenAddress: string): GDQuote {
     query: { enabled: probeMultihop },
   });
 
-  const celoGdIdx  = celoGdPools?.findIndex(r => r.status === "success" && r.result !== ZERO_ADDR) ?? -1;
-  const celoGdAddr = celoGdIdx  !== -1 ? (celoGdPools![celoGdIdx].result   as `0x${string}`) : undefined;
+  const celoGdAddrs    = FEE_TIERS.map((_, i) => poolAt(celoGdPools, i));
+  const tokenCeloAddrs = FEE_TIERS.map((_, i) => poolAt(tokenCeloPools, i));
+  const anyCeloGd      = celoGdAddrs.some(Boolean);
+  const anyTokenCelo   = tokenCeloAddrs.some(Boolean);
 
-  const tokenCeloIdx  = tokenCeloPools?.findIndex(r => r.status === "success" && r.result !== ZERO_ADDR) ?? -1;
-  const tokenCeloAddr = tokenCeloIdx !== -1 ? (tokenCeloPools![tokenCeloIdx].result as `0x${string}`) : undefined;
-
-  // ── Step 4: slot0 for multihop pools ─────────────────────────────────────
-  const { data: celoGdSlot0, isLoading: celoGdSlotLoading } = useReadContract({
-    address:      celoGdAddr,
-    abi:          POOL_SLOT0_ABI,
-    functionName: "slot0",
-    query:        { enabled: !!celoGdAddr },
+  // ── Step 4: slot0 + liquidity for CELO/GD candidates ─────────────────────
+  const { data: celoGdSlot0s, isLoading: celoGdSlot0sLoading } = useReadContracts({
+    contracts: celoGdAddrs.map(a => ({
+      address:      (a ?? ZERO_ADDR) as `0x${string}`,
+      abi:          POOL_SLOT0_ABI,
+      functionName: "slot0" as const,
+    })),
+    query: { enabled: probeMultihop && anyCeloGd },
   });
 
-  const { data: tokenCeloSlot0, isLoading: tokenCeloSlotLoading } = useReadContract({
-    address:      tokenCeloAddr,
-    abi:          POOL_SLOT0_ABI,
-    functionName: "slot0",
-    query:        { enabled: !!tokenCeloAddr },
+  const { data: celoGdLiquids, isLoading: celoGdLiquidsLoading } = useReadContracts({
+    contracts: celoGdAddrs.map(a => ({
+      address:      (a ?? ZERO_ADDR) as `0x${string}`,
+      abi:          POOL_LIQUIDITY_ABI,
+      functionName: "liquidity" as const,
+    })),
+    query: { enabled: probeMultihop && anyCeloGd },
   });
+
+  // ── Step 5: slot0 + liquidity for tokenIn/CELO candidates ────────────────
+  const { data: tokenCeloSlot0s, isLoading: tokenCeloSlot0sLoading } = useReadContracts({
+    contracts: tokenCeloAddrs.map(a => ({
+      address:      (a ?? ZERO_ADDR) as `0x${string}`,
+      abi:          POOL_SLOT0_ABI,
+      functionName: "slot0" as const,
+    })),
+    query: { enabled: probeMultihop && anyTokenCelo },
+  });
+
+  const { data: tokenCeloLiquids, isLoading: tokenCeloLiquidsLoading } = useReadContracts({
+    contracts: tokenCeloAddrs.map(a => ({
+      address:      (a ?? ZERO_ADDR) as `0x${string}`,
+      abi:          POOL_LIQUIDITY_ABI,
+      functionName: "liquidity" as const,
+    })),
+    query: { enabled: probeMultihop && anyTokenCelo },
+  });
+
+  // First valid CELO/GD and tokenIn/CELO pools (deployed + initialized + liquid)
+  const celoGdIdx = celoGdAddrs.findIndex(
+    (a, i) => a !== null && poolHasLiquidity(celoGdSlot0s, celoGdLiquids, i),
+  );
+  const tokenCeloIdx = tokenCeloAddrs.findIndex(
+    (a, i) => a !== null && poolHasLiquidity(tokenCeloSlot0s, tokenCeloLiquids, i),
+  );
+
+  const celoGdAddr    = celoGdIdx    !== -1 ? celoGdAddrs[celoGdIdx]       : undefined;
+  const tokenCeloAddr = tokenCeloIdx !== -1 ? tokenCeloAddrs[tokenCeloIdx] : undefined;
+  const celoGdSlot0   = celoGdIdx    !== -1
+    ? (celoGdSlot0s?.[celoGdIdx]?.result    as readonly [bigint, ...unknown[]] | undefined)
+    : undefined;
+  const tokenCeloSlot0 = tokenCeloIdx !== -1
+    ? (tokenCeloSlot0s?.[tokenCeloIdx]?.result as readonly [bigint, ...unknown[]] | undefined)
+    : undefined;
 
   // ── Loading aggregate ─────────────────────────────────────────────────────
   const loading =
     directPoolsLoading ||
-    (!!directAddr && directSlotLoading) ||
+    (anyDirect && (directSlot0sLoading || directLiquidsLoading)) ||
     (probeMultihop && (
       celoGdPoolsLoading    || tokenCeloPoolsLoading ||
-      (!!celoGdAddr    && celoGdSlotLoading)    ||
-      (!!tokenCeloAddr && tokenCeloSlotLoading)
+      (anyCeloGd    && (celoGdSlot0sLoading    || celoGdLiquidsLoading))    ||
+      (anyTokenCelo && (tokenCeloSlot0sLoading || tokenCeloLiquidsLoading))
     ));
 
   if (loading) return { gdPerToken: 0, loading: true, error: false, routeType: null };
 
   // ── Route 1: Direct pool ──────────────────────────────────────────────────
-  if (directAddr && directSlot0 && directSlot0[0] > 0n) {
-    // V3 sorts token0 < token1 by address value
+  if (directAddr && directSlot0) {
     const gdIsToken1 = addr.toLowerCase() < (GOOD_DOLLAR as string).toLowerCase();
     const gdPerToken = sqrtPriceToRatio(directSlot0[0], gdIsToken1);
     const fee1 = FEE_TIERS[directIdx];
@@ -185,20 +288,12 @@ export function useGDQuote(tokenAddress: string): GDQuote {
   }
 
   // ── Route 2: Multihop tokenIn → CELO → G$ ────────────────────────────────
-  if (
-    probeMultihop &&
-    celoGdAddr    && celoGdSlot0    && celoGdSlot0[0]    > 0n &&
-    tokenCeloAddr && tokenCeloSlot0 && tokenCeloSlot0[0] > 0n
-  ) {
-    // tokenIn/CELO pool: does the price give CELO per tokenIn?
-    const celoIsToken1 = addr.toLowerCase() < CELO_ADDRESS.toLowerCase();
-    const celoPerToken = sqrtPriceToRatio(tokenCeloSlot0[0], celoIsToken1);
-
-    // CELO/GD pool: GD per CELO
+  if (probeMultihop && celoGdAddr && celoGdSlot0 && tokenCeloAddr && tokenCeloSlot0) {
+    const celoIsToken1     = addr.toLowerCase() < CELO_ADDRESS.toLowerCase();
+    const celoPerToken     = sqrtPriceToRatio(tokenCeloSlot0[0], celoIsToken1);
     const gdIsToken1InHop2 = CELO_ADDRESS.toLowerCase() < (GOOD_DOLLAR as string).toLowerCase();
     const gdPerCelo        = sqrtPriceToRatio(celoGdSlot0[0], gdIsToken1InHop2);
-
-    const gdPerToken = celoPerToken * gdPerCelo;
+    const gdPerToken       = celoPerToken * gdPerCelo;
     const fee1 = FEE_TIERS[tokenCeloIdx];
     const fee2 = FEE_TIERS[celoGdIdx];
     console.debug("[useGDQuote] route: multihop", { addr, fee1, fee2, celoPerToken, gdPerCelo, gdPerToken });
@@ -207,12 +302,10 @@ export function useGDQuote(tokenAddress: string): GDQuote {
 
   // ── No route found ────────────────────────────────────────────────────────
   console.error("[useGDQuote] no route found for", addr, {
-    directPools:    directPools?.map(r => ({ status: r.status, pool: r.result })),
+    directAddrs,
     probeMultihop,
-    celoGdPools:    celoGdPools?.map(r =>    ({ status: r.status, pool: r.result })),
-    tokenCeloPools: tokenCeloPools?.map(r => ({ status: r.status, pool: r.result })),
-    celoGdSlot0:    celoGdSlot0    ? String(celoGdSlot0[0])    : "(no slot0)",
-    tokenCeloSlot0: tokenCeloSlot0 ? String(tokenCeloSlot0[0]) : "(no slot0)",
+    celoGdAddrs,
+    tokenCeloAddrs,
   });
   return { gdPerToken: 0, loading: false, error: true, routeType: null };
 }
