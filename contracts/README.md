@@ -1,6 +1,6 @@
 # Bloom — GoodDollar Streaming Protocol on Celo
 
-Bloom lets users deposit any token, swap it to G$ via Uniswap v4, then stream G$ to a recipient over time using Superfluid CFA.
+Bloom lets users deposit any token, swap it to G$ via Uniswap V3, then stream G$ to a recipient over time using Superfluid CFA.
 
 ---
 
@@ -8,8 +8,8 @@ Bloom lets users deposit any token, swap it to G$ via Uniswap v4, then stream G$
 
 | Contract | Address |
 |---|---|
-| **BloomV1** (implementation) | [`0x93e723F8F0377DC45538BE25c2c0Cbc89f010b89`](https://celoscan.io/address/0x93e723F8F0377DC45538BE25c2c0Cbc89f010b89) |
-| **BloomProxy** (use this one) | [`0x9C3e151Af503f5648A5e1E6AC45b80EBDE3Bd03E`](https://celoscan.io/address/0x9C3e151Af503f5648A5e1E6AC45b80EBDE3Bd03E) |
+| **BloomV1** (implementation) | [`0xDeD7C9ea84CC5dC7d1b1813e8BA613c9A9bC5930`](https://celoscan.io/address/0xDeD7C9ea84CC5dC7d1b1813e8BA613c9A9bC5930) |
+| **BloomProxy** (use this one) | [`0x24e3682aAb422547A30821E268a47a4F1Cc15814`](https://celoscan.io/address/0x24e3682aAb422547A30821E268a47a4F1Cc15814) |
 
 > Always interact with **BloomProxy**. BloomV1 is the logic contract only.
 
@@ -21,11 +21,9 @@ Bloom lets users deposit any token, swap it to G$ via Uniswap v4, then stream G$
 |---|---|
 | G$ (GoodDollar Super Token) | `0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A` |
 | Superfluid CFAv1 Forwarder | `0xcfA132E353cB4E398080B9700609bb008eceB125` |
-| Uniswap v4 Pool Manager | `0x288dc841A52FCA2707c6947B3A777c5E56cd87BC` |
-| V4 Quoter | `0x28566da1093609182dff2cb2a91cfd72e61d66cd` |
-| UniversalRouter | `0xcb695bc5d3aa22cad1e6df07801b061a05a0233a` |
-| Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
-| StateView | `0xbc21f8720babf4b20d195ee5c6e99c52b76f2bfb` |
+| Uniswap V3 Factory | `0xAfE208a311B21f13EF87E33A90049fC17A7acDEc` |
+| Uniswap V3 SwapRouter02 | `0x5615CDAb10dc425a742d643d949a7F474C01abc4` |
+| Uniswap V3 QuoterV2 | `0x82825d0554fA07f7FC52Ab63c961F330fdEFa8E8` |
 
 ---
 
@@ -37,7 +35,7 @@ User
  ▼
 BloomProxy (ERC1967)  ──delegatecall──►  BloomV1 (UUPS implementation)
  │                                            │
- │  deposit tokens                            │  swap via Uniswap v4
+ │  deposit tokens                            │  swap via Uniswap V3
  │  startStream / stopStream                  │  stream via Superfluid CFA
  │  restream / withdraw                       │
 ```

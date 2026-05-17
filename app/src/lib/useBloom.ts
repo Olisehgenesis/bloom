@@ -36,16 +36,15 @@ export const BLOOM_ABI = [
     ],
   },
   {
-    name: "poolRegistry",
+    name: "routes",
     type: "function",
     stateMutability: "view",
     inputs: [{ name: "token", type: "address" }],
     outputs: [
-      { name: "currency0",   type: "address" },
-      { name: "currency1",   type: "address" },
-      { name: "fee",         type: "uint24"  },
-      { name: "tickSpacing", type: "int24"   },
-      { name: "hooks",       type: "address" },
+      { name: "multiHop",     type: "bool"    },
+      { name: "fee1",         type: "uint24"  },
+      { name: "fee2",         type: "uint24"  },
+      { name: "intermediate", type: "address" },
     ],
   },
   {
@@ -120,19 +119,17 @@ export const BLOOM_ABI = [
     inputs: [
       { name: "tokenIn",  type: "address" },
       { name: "amountIn", type: "uint256" },
-      { name: "minGDOut", type: "uint256" },
-    ],
-    outputs: [],
-  },
-  {
-    name: "depositSplit",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "tokenIn",  type: "address" },
-      { name: "amountIn", type: "uint256" },
       { name: "splitBps", type: "uint256" },
       { name: "minGDOut", type: "uint256" },
+      {
+        name: "hint", type: "tuple",
+        components: [
+          { name: "multiHop",     type: "bool"    },
+          { name: "fee1",         type: "uint24"  },
+          { name: "fee2",         type: "uint24"  },
+          { name: "intermediate", type: "address" },
+        ],
+      },
     ],
     outputs: [],
   },
@@ -312,6 +309,15 @@ export interface DepositAndStreamParams {
   recipient:        Address;
   durationSec:      number;
   currentAllowance: bigint;
+  /** 1–10000 bps. 10000 = 100% swap (default, no split). 0 = contract default (30%). */
+  splitBps?:        number;
+  /** When true, deposit but skip startStream (deposit-only mode). */
+  depositOnly?:     boolean;
+  /** Route hint: obtained from useGDQuote() and passed to the contract's deposit(). */
+  multiHop:         boolean;
+  fee1:             number;
+  fee2:             number;
+  intermediate:     Address;
 }
 
 export interface RestreamParams {
@@ -448,6 +454,20 @@ export function useCyclesTo(
   };
 }
 
+/** Check if a recipient address already has an active stream from another user. */
+export function useRecipientCheck(recipient: Address | undefined) {
+  const { data, isLoading } = useReadContract({
+    address: BLOOM_PROXY as Address,
+    abi:     BLOOM_ABI,
+    functionName: "recipientToUser",
+    args:    [recipient!],
+    query:   { enabled: !!recipient },
+  });
+  const existingUser = data as Address | undefined;
+  const isTaken = !!existingUser && existingUser !== "0x0000000000000000000000000000000000000000";
+  return { isTaken, existingUser, loading: isLoading };
+}
+
 /** ERC-20 allowance that the user has granted to BLOOM_PROXY. */
 export function useTokenAllowance(
   tokenAddress: Address | undefined,
@@ -491,7 +511,7 @@ export function useBloomWrite() {
     setStep("error");
   }
 
-  /** Approve (if needed) → deposit → startStream */
+  /** Approve (if needed) → deposit (auto-routing) → optionally startStream */
   async function depositAndStream(p: DepositAndStreamParams) {
     try {
       if (p.currentAllowance < p.amountBig) {
@@ -509,8 +529,16 @@ export function useBloomWrite() {
         address:      BLOOM_PROXY as Address,
         abi:          BLOOM_ABI,
         functionName: "deposit",
-        args:         [p.tokenAddress, p.amountBig, p.minGDOut],
+        args:         [
+          p.tokenAddress,
+          p.amountBig,
+          BigInt(p.splitBps ?? 10000),
+          p.minGDOut,
+          { multiHop: p.multiHop, fee1: p.fee1, fee2: p.fee2, intermediate: p.intermediate },
+        ],
       }));
+
+      if (p.depositOnly) { setStep("done"); return; }
 
       setStep("streaming");
       await _wait(await writeContractAsync({
@@ -520,6 +548,20 @@ export function useBloomWrite() {
         args:         [p.recipient, BigInt(p.durationSec)],
       }));
 
+      setStep("done");
+    } catch (e) { _catch(e); }
+  }
+
+  /** Stream from existing G$ balance — no deposit needed. */
+  async function startStreamOnly(recipient: Address, durationSec: number) {
+    try {
+      setStep("streaming");
+      await _wait(await writeContractAsync({
+        address:      BLOOM_PROXY as Address,
+        abi:          BLOOM_ABI,
+        functionName: "startStream",
+        args:         [recipient, BigInt(durationSec)],
+      }));
       setStep("done");
     } catch (e) { _catch(e); }
   }
@@ -566,5 +608,5 @@ export function useBloomWrite() {
     } catch (e) { _catch(e); }
   }
 
-  return { step, error, reset, depositAndStream, stopStream, restream, withdraw };
+  return { step, error, reset, depositAndStream, startStreamOnly, stopStream, restream, withdraw };
 }

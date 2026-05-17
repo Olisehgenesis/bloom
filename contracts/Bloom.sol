@@ -7,65 +7,42 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-// ─────────────────────────────────────────────────────────
-//  Uniswap V4 types (minimal — only what BloomV1 needs)
-// ─────────────────────────────────────────────────────────
-
-/// @dev Currency is just an address wrapper in v4 (address(0) = native CELO).
-type Currency is address;
-
-struct PoolKey {
-    Currency currency0;
-    Currency currency1;
-    uint24   fee;
-    int24    tickSpacing;
-    address  hooks;
+/// @notice Per-token V3 swap route configuration.
+/// For a direct swap (multiHop=false): fee1 is the tokenIn/G$ pool fee; fee2 and intermediate unused.
+/// For a 2-hop swap  (multiHop=true):  fee1 is tokenIn/intermediate, fee2 is intermediate/G$.
+struct Route {
+    bool    multiHop;
+    uint24  fee1;
+    uint24  fee2;
+    address intermediate;
 }
 
-// ─────────────────────────────────────────────────────────
-//  UniversalRouter command bytes (V4 subset used here)
-// ─────────────────────────────────────────────────────────
-//
-//  Full command table: https://github.com/Uniswap/universal-router
-//
-//  0x06  V4_SWAP                – execute a sequence of v4 actions
-//
-//  V4 action sub-commands (passed inside the V4_SWAP inputs blob):
-//  0x00  SWAP_EXACT_IN_SINGLE   – single-hop exact-in
-//  0x01  SWAP_EXACT_IN          – multi-hop exact-in  (PathKey array)
-//  0x0f  SETTLE_ALL             – settle all owed tokens back to router
-//  0x10  TAKE_ALL               – take all tokens from router to recipient
-
-// ─────────────────────────────────────────────────────────
-//  Interfaces
-// ─────────────────────────────────────────────────────────
-
-interface IUniversalRouter {
-    /// @notice Execute encoded commands with corresponding inputs.
-    /// @param commands  Packed bytes — each byte is one command.
-    /// @param inputs    ABI-encoded params per command, same length as commands.
-    /// @param deadline  Unix timestamp after which the call reverts.
-    function execute(
-        bytes calldata commands,
-        bytes[] calldata inputs,
-        uint256 deadline
-    ) external payable;
+interface IUniswapV3Factory {
+    function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool);
 }
 
-interface IPermit2 {
-    function approve(
-        address token,
-        address spender,
-        uint160 amount,
-        uint48  expiration
-    ) external;
+/// @notice Uniswap V3 SwapRouter02 — no deadline parameter.
+interface ISwapRouter02 {
+    struct ExactInputSingleParams {
+        address tokenIn;
+        address tokenOut;
+        uint24  fee;
+        address recipient;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+        uint160 sqrtPriceLimitX96;
+    }
+    function exactInputSingle(ExactInputSingleParams calldata params)
+        external payable returns (uint256 amountOut);
 
-    /// @notice Returns the permit2 allowance for a (token, owner, spender) triple.
-    function allowance(
-        address owner,
-        address token,
-        address spender
-    ) external view returns (uint160 amount, uint48 expiration, uint48 nonce);
+    struct ExactInputParams {
+        bytes   path;
+        address recipient;
+        uint256 amountIn;
+        uint256 amountOutMinimum;
+    }
+    function exactInput(ExactInputParams calldata params)
+        external payable returns (uint256 amountOut);
 }
 
 interface ICFAv1Forwarder {
@@ -83,22 +60,6 @@ interface IERC20 {
     function allowance(address owner, address spender) external view returns (uint256);
 }
 
-// ─────────────────────────────────────────────────────────
-//  PathKey — used for multi-hop routing in V4
-// ─────────────────────────────────────────────────────────
-
-struct PathKey {
-    Currency intermediateCurrency;
-    uint24   fee;
-    int24    tickSpacing;
-    address  hooks;
-    bytes    hookData;
-}
-
-// ─────────────────────────────────────────────────────────
-//  BloomV1
-// ─────────────────────────────────────────────────────────
-
 contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPSUpgradeable {
 
     // ─────────────────────────────────────────────────────────
@@ -107,44 +68,34 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
 
     address public constant GOOD_DOLLAR   = 0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A;
     address public constant CFA_FORWARDER = 0xcfA132E353cB4E398080B9700609bb008eceB125;
-
-    /// @notice Uniswap V4 UniversalRouter on Celo mainnet.
-    address public constant UNIVERSAL_ROUTER = 0xcb695bc5D3Aa22cAD1E6DF07801b061a05A0233A;
-
-    /// @notice Permit2 — canonical address (same on all chains).
-    address public constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
-
-    // V4_SWAP command byte for UniversalRouter
-    uint8 internal constant CMD_V4_SWAP = 0x06;
-
-    // V4 action sub-commands (encoded inside the V4_SWAP inputs blob)
-    uint8 internal constant ACT_SWAP_EXACT_IN_SINGLE = 0x00;
-    uint8 internal constant ACT_SWAP_EXACT_IN        = 0x01;
-    uint8 internal constant ACT_SETTLE_ALL           = 0x0f;
-    uint8 internal constant ACT_TAKE_ALL             = 0x10;
+    /// @notice Uniswap V3 SwapRouter02 on Celo.
+    address public constant SWAP_ROUTER   = 0x5615CDAb10dc425a742d643d949a7F474C01abc4;
+    /// @notice Uniswap V3 Factory on Celo — used for on-chain route auto-discovery.
+    address public constant V3_FACTORY    = 0xAfE208a311B21f13EF87E33A90049fC17A7acDEc;
+    /// @notice Native CELO ERC-20 wrapper — used as the default multihop intermediate.
+    address public constant CELO_TOKEN    = 0x471EcE3750Da237f93B8E339c536989b8978a438;
 
     uint256 internal constant SF_DEPOSIT_PERIOD    = 4 hours;
+    /// @notice Superfluid enforces a minimum deposit of 1 G$ (1e18) regardless of flow rate.
+    ///         Streams with rate * SF_DEPOSIT_PERIOD < SF_MIN_DEPOSIT use this floor instead.
     uint256 internal constant SF_MIN_DEPOSIT       = 1e18;
-    uint256 internal constant DECREASE_PENALTY_BPS = 500;   // 5%
-    uint256 internal constant EARLY_STOP_FEE_BPS   = 500;   // 5%
+    uint256 internal constant DECREASE_PENALTY_BPS = 500;  // 5% on gdBalance when decreasing rate
+    uint256 internal constant EARLY_STOP_FEE_BPS   = 500;  // 5% of remaining balance on early stop
     uint256 internal constant RESTREAM_COOLDOWN    = 24 hours;
     uint256 internal constant DEFAULT_SPLIT_BPS    = 3000;
 
-    /// @notice Seconds added to block.timestamp for swap deadlines.
-    ///         Gives miners no exploitable window while still providing
-    ///         a reasonable buffer for block inclusion.
-    uint256 internal constant SWAP_DEADLINE_BUFFER = 30;
-
+    /// @notice G$ on Celo is a Superfluid Super Token and uses 18 decimals (not 2 like the
+    ///         Ethereum mainnet version). All gdBalance / flowRate values are in raw units (wei).
     uint8 public constant GD_DECIMALS = 18;
 
     // ─────────────────────────────────────────────────────────
     //  Storage
     // ─────────────────────────────────────────────────────────
 
-    /// @notice Accumulated protocol fees in G$ (claimable by owner via collectFees).
+    /// @notice Accumulated protocol fees in G$ (claimable by owner via collectFees)
     uint256 public collectedFees;
 
-    /// @notice Sum of all user gdBalances — used as an invariant guard.
+    /// @notice Sum of all user gdBalances — used as an invariant guard
     uint256 public totalTrackedBalance;
 
     struct Account {
@@ -157,9 +108,9 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         uint256 restreamCount;
     }
 
-    mapping(address => Account)  public accounts;
-    mapping(address => PoolKey)  public poolRegistry;    // tokenIn → single-hop PoolKey to G$
-    mapping(address => address)  public recipientToUser;
+    mapping(address => Account) public accounts;
+    mapping(address => Route)   public routes;
+    mapping(address => address) public recipientToUser;
 
     // ─────────────────────────────────────────────────────────
     //  Events
@@ -172,51 +123,57 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
     event StreamStopped(address indexed user, address indexed recipient, uint256 gdRemaining, uint256 earlyStopFee);
     event Restreamed(address indexed user, address indexed newRecipient, int96 newRate, uint256 restreamCount);
     event Withdrawn(address indexed user, uint256 amount);
-    event PoolRegistered(address indexed token, PoolKey key);
+    event RouteRegistered(address indexed token, Route route);
     event FeesCollected(address indexed to, uint256 amount);
-
-    /// @notice FIX 4: Emitted for every emergencyWithdraw, including non-G$ tokens.
-    event EmergencyWithdrawn(address indexed token, address indexed to, uint256 amount);
 
     // ─────────────────────────────────────────────────────────
     //  Initializer
     // ─────────────────────────────────────────────────────────
 
-    function initialize() external initializer {
+    /// @param _unused Legacy parameter kept for proxy ABI compatibility; ignored.
+    function initialize(address _unused) external initializer {
+        _unused;
         __Ownable_init(msg.sender);
         __Pausable_init();
     }
 
     function _authorizeUpgrade(address newImpl) internal override onlyOwner {}
 
-    receive() external payable {}
-
     // ─────────────────────────────────────────────────────────
-    //  Deposit — single-hop via UniversalRouter (registered pool)
+    //  Deposit
     // ─────────────────────────────────────────────────────────
 
-    /// @notice Swap `amountIn` of `tokenIn` → G$ via the registered single-hop V4 pool,
-    ///         then credit the caller's G$ balance.
+    /**
+     * @notice Swap `tokenIn` → G$ via its V3 route and credit the caller.
+     *
+     * Route resolution order:
+     *   1. Owner-registered route (via `registerRoute`) — used if set.
+     *   2. Caller-supplied `hint` — the frontend discovers this off-chain via `findRoute()`.
+     *
+     * No on-chain factory probing during deposit (saves ~500k gas vs auto-discovery).
+     *
+     * @param tokenIn      Input ERC-20.
+     * @param amountIn     Total amount to transfer from caller.
+     * @param splitBps     Fraction to swap (10000 = 100%, 0 → default 30%).
+     *                     The unswapped remainder is returned to the caller immediately.
+     * @param minGDOut     Minimum G$ to receive (slippage guard, in wei).
+     * @param hint         Route to use when no registered override exists.
+     *                     Call `findRoute(tokenIn)` off-chain to obtain this value.
+     */
     function deposit(
         address tokenIn,
         uint256 amountIn,
-        uint256 minGDOut
-    ) external whenNotPaused {
-        PoolKey memory key = _requireRegisteredPool(tokenIn);
-        uint256 gdOut = _swapExactInSingle(key, tokenIn, amountIn, minGDOut);
-        _creditUser(msg.sender, gdOut);
-        emit Deposited(msg.sender, tokenIn, amountIn, gdOut);
-    }
-
-    /// @notice Same as `deposit` but only swap `splitBps / 10_000` of `amountIn`;
-    ///         the remainder is returned to the caller.
-    function depositSplit(
-        address tokenIn,
-        uint256 amountIn,
         uint256 splitBps,
-        uint256 minGDOut
+        uint256 minGDOut,
+        Route   calldata hint
     ) external whenNotPaused {
-        PoolKey memory key = _requireRegisteredPool(tokenIn);
+        // Registered override takes priority; otherwise use caller-supplied hint
+        Route memory r = routes[tokenIn];
+        if (r.fee1 == 0) {
+            require(hint.fee1 != 0, "Bloom: route hint required");
+            r = hint;
+        }
+
         if (splitBps == 0) splitBps = DEFAULT_SPLIT_BPS;
         require(splitBps <= 10_000, "Bloom: splitBps > 100%");
 
@@ -226,51 +183,7 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
         if (returnAmt > 0) IERC20(tokenIn).transfer(msg.sender, returnAmt);
 
-        uint256 gdOut = _swapExactInSingleFromBalance(key, tokenIn, swapAmt, minGDOut);
-        _creditUser(msg.sender, gdOut);
-        emit Deposited(msg.sender, tokenIn, swapAmt, gdOut);
-    }
-
-    // ─────────────────────────────────────────────────────────
-    //  Deposit — multi-hop via UniversalRouter
-    // ─────────────────────────────────────────────────────────
-
-    /// @notice Swap `amountIn` of `tokenIn` → intermediate → G$ via two V4 pools.
-    ///         Pool keys are passed directly — no registration required, so truly
-    ///         any token with a two-hop route to G$ is supported.
-    /// @param startKey   Pool for tokenIn → intermediate token.
-    /// @param endKey     Pool for intermediate token → G$.
-    function depositMultiHop(
-        PoolKey calldata startKey,
-        PoolKey calldata endKey,
-        address tokenIn,
-        uint256 amountIn,
-        uint256 minGDOut
-    ) external whenNotPaused {
-        uint256 gdOut = _swapExactInMulti(startKey, endKey, tokenIn, amountIn, minGDOut);
-        _creditUser(msg.sender, gdOut);
-        emit Deposited(msg.sender, tokenIn, amountIn, gdOut);
-    }
-
-    /// @notice Multi-hop with split — only swap `splitBps / 10_000` of `amountIn`.
-    function depositSplitMultiHop(
-        PoolKey calldata startKey,
-        PoolKey calldata endKey,
-        address tokenIn,
-        uint256 amountIn,
-        uint256 splitBps,
-        uint256 minGDOut
-    ) external whenNotPaused {
-        if (splitBps == 0) splitBps = DEFAULT_SPLIT_BPS;
-        require(splitBps <= 10_000, "Bloom: splitBps > 100%");
-
-        uint256 swapAmt   = amountIn * splitBps / 10_000;
-        uint256 returnAmt = amountIn - swapAmt;
-
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
-        if (returnAmt > 0) IERC20(tokenIn).transfer(msg.sender, returnAmt);
-
-        uint256 gdOut = _swapExactInMultiFromBalance(startKey, endKey, tokenIn, swapAmt, minGDOut);
+        uint256 gdOut = _swapV3(r, tokenIn, swapAmt, minGDOut);
         _creditUser(msg.sender, gdOut);
         emit Deposited(msg.sender, tokenIn, swapAmt, gdOut);
     }
@@ -318,6 +231,7 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         require(newFlowRate > 0,            "Bloom: new rate must be > 0");
         require(newFlowRate < acc.flowRate, "Bloom: new rate must be lower");
 
+        // 5% penalty on gdBalance → protocol fees
         uint256 penalty = acc.gdBalance * DECREASE_PENALTY_BPS / 10_000;
         if (penalty > 0) {
             acc.gdBalance       -= penalty;
@@ -332,13 +246,14 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         emit StreamDecreased(msg.sender, old, newFlowRate, penalty);
     }
 
+    /// @notice Voluntarily stop your active stream before it expires.
+    ///         A 5% fee on the remaining G$ balance is charged to the protocol.
     function stopStream() external {
         _stopStreamFor(msg.sender, accounts[msg.sender], false);
     }
 
-    /// @notice FIX 2 (explicit): Anyone may call this to clean up an expired stream.
-    ///         This is intentional — it lets keepers/bots settle streams on behalf of
-    ///         users. It does NOT let anyone stop an active (non-expired) stream early.
+    /// @notice Anyone can trigger expiry for a stream whose end time has passed.
+    ///         No early-stop fee is charged on natural expiry.
     function triggerExpiry(address user) external {
         Account storage acc = accounts[user];
         require(acc.streamTo != address(0), "Bloom: no active stream");
@@ -364,32 +279,36 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
 
         address oldRecipient = acc.streamTo;
 
-        // FIX 3: Explicitly allow same-recipient restream (e.g. extend duration),
-        //         but block a different recipient that already has a stream.
-        require(
-            newRecipient == oldRecipient || recipientToUser[newRecipient] == address(0),
-            "Bloom: new recipient already has a stream"
-        );
-
+        // Close old flow
         ICFAv1Forwarder(CFA_FORWARDER).deleteFlow(GOOD_DOLLAR, address(this), oldRecipient, "");
         delete recipientToUser[oldRecipient];
 
+        // Deduct tokens already streamed
         uint256 elapsed  = block.timestamp - acc.streamStart;
         uint256 streamed = uint256(uint96(acc.flowRate)) * elapsed;
         if (streamed > acc.gdBalance) streamed = acc.gdBalance;
         acc.gdBalance       -= streamed;
         totalTrackedBalance -= streamed;
 
+        // FIX: credit SF deposit refund using surplus above tracked balances only
         uint256 sfDepositRefund   = _depositAmount(uint96(acc.flowRate));
         uint256 contractGD        = IERC20(GOOD_DOLLAR).balanceOf(address(this));
-        uint256 surplusInContract = contractGD > totalTrackedBalance ? contractGD - totalTrackedBalance : 0;
-        uint256 refund = sfDepositRefund < surplusInContract ? sfDepositRefund : surplusInContract;
+        uint256 surplusInContract = contractGD > totalTrackedBalance
+            ? contractGD - totalTrackedBalance
+            : 0;
+        uint256 refund = sfDepositRefund < surplusInContract
+            ? sfDepositRefund
+            : surplusInContract;
         if (refund > 0) {
             acc.gdBalance       += refund;
             totalTrackedBalance += refund;
         }
 
         require(acc.gdBalance > 0, "Bloom: no G$ left to restream");
+        require(
+            recipientToUser[newRecipient] == address(0) || newRecipient == oldRecipient,
+            "Bloom: new recipient already has a stream"
+        );
 
         if (newFlowRate == 0) newFlowRate = _calcFlowRate(acc.gdBalance, duration);
         require(newFlowRate > 0, "Bloom: G$ balance too small for duration; call minGdToStream(duration) for the minimum");
@@ -424,27 +343,22 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
     //  Admin
     // ─────────────────────────────────────────────────────────
 
-    /// @notice Register a single-hop V4 pool key for a given input token.
-    ///         The pool must contain G$ as one of its currencies.
-    ///         Not required for multi-hop deposits — those accept pool keys directly.
-    function registerPool(address token, PoolKey calldata key) external onlyOwner {
-        require(
-            Currency.unwrap(key.currency0) == GOOD_DOLLAR ||
-            Currency.unwrap(key.currency1) == GOOD_DOLLAR,
-            "Bloom: pool must contain G$"
-        );
-        require(
-            Currency.unwrap(key.currency0) != address(0) &&
-            Currency.unwrap(key.currency1) != address(0),
-            "Bloom: invalid pool key"
-        );
-        poolRegistry[token] = key;
-        emit PoolRegistered(token, key);
+    /**
+     * @notice Optionally override the auto-discovered route for `token`.
+     *         Once set, this route takes priority over factory auto-discovery.
+     *         Set fee1 = 0 to clear an override and revert to auto-discovery.
+     * @param token  Input token address (e.g. CELO, cUSD).
+     * @param route  For direct: set fee1 only. For multiHop: set fee1, fee2, and intermediate.
+     */
+    function registerRoute(address token, Route calldata route) external onlyOwner {
+        routes[token] = route;
+        emit RouteRegistered(token, route);
     }
 
     function pause()   external onlyOwner { _pause();   }
     function unpause() external onlyOwner { _unpause(); }
 
+    /// @notice Withdraw accumulated protocol fees to `to`.
     function collectFees(address to) external onlyOwner {
         require(to != address(0), "Bloom: zero address");
         uint256 amount = collectedFees;
@@ -454,23 +368,125 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         emit FeesCollected(to, amount);
     }
 
-    /// @notice FIX 4: EmergencyWithdrawn event now emitted for ALL token types,
-    ///         giving a full on-chain audit trail.
+    /// @notice Emergency rescue of tokens accidentally sent to the contract.
+    ///         For G$, only the surplus above what users + fees are owed can be rescued.
+    ///         Other ERC-20 tokens can be rescued freely (they have no user accounting).
     function emergencyWithdraw(address token, address to, uint256 amount) external onlyOwner {
         require(to != address(0), "Bloom: zero address");
         if (token == GOOD_DOLLAR) {
             uint256 contractBal = IERC20(GOOD_DOLLAR).balanceOf(address(this));
             uint256 owed        = totalTrackedBalance + collectedFees;
-            require(contractBal >= owed,   "Bloom: contract underfunded");
+            require(contractBal >= owed,      "Bloom: contract underfunded");
             uint256 surplus = contractBal - owed;
-            require(amount <= surplus,     "Bloom: exceeds surplus");
+            require(amount <= surplus,        "Bloom: exceeds surplus");
         }
         IERC20(token).transfer(to, amount);
-        emit EmergencyWithdrawn(token, to, amount);
     }
 
     // ─────────────────────────────────────────────────────────
-    //  View helpers
+    //  V3 route discovery (public view — call off-chain before deposit)
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * @notice Returns the best V3 route for `tokenIn` → G$.
+     *         Checks for a registered override first, then probes the V3 factory.
+     *         Intended to be called off-chain (view); pass the result as `hint` to deposit().
+     */
+    function findRoute(address tokenIn) external view returns (Route memory) {
+        Route memory r = routes[tokenIn];
+        if (r.fee1 != 0) return r;
+        return _findRoute(tokenIn);
+    }
+
+    // ─────────────────────────────────────────────────────────
+    //  Internal – V3 route auto-discovery
+    // ─────────────────────────────────────────────────────────
+
+    /**
+     * @notice Probe the V3 factory to find a valid swap route for `tokenIn` → G$.
+     *         Tries direct pools first (all four standard fee tiers),
+     *         then falls back to a 2-hop via CELO if no direct pool exists.
+     * @dev    Reverts if no pool is found in either search.
+     */
+    function _findRoute(address tokenIn) internal view returns (Route memory r) {
+        uint24[4] memory fees = [uint24(100), uint24(500), uint24(3000), uint24(10000)];
+
+        // 1. Direct: tokenIn → G$
+        for (uint256 i = 0; i < 4; i++) {
+            address pool = IUniswapV3Factory(V3_FACTORY).getPool(tokenIn, GOOD_DOLLAR, fees[i]);
+            if (pool != address(0)) {
+                r.fee1 = fees[i];
+                return r; // multiHop defaults to false
+            }
+        }
+
+        // 2. Two-hop: tokenIn → CELO → G$ (skip if tokenIn is CELO itself)
+        if (tokenIn != CELO_TOKEN) {
+            // Find the CELO/G$ pool
+            uint24 celoGdFee;
+            for (uint256 i = 0; i < 4; i++) {
+                address pool = IUniswapV3Factory(V3_FACTORY).getPool(CELO_TOKEN, GOOD_DOLLAR, fees[i]);
+                if (pool != address(0)) { celoGdFee = fees[i]; break; }
+            }
+            if (celoGdFee != 0) {
+                // Find the tokenIn/CELO pool
+                for (uint256 i = 0; i < 4; i++) {
+                    address pool = IUniswapV3Factory(V3_FACTORY).getPool(tokenIn, CELO_TOKEN, fees[i]);
+                    if (pool != address(0)) {
+                        r.multiHop    = true;
+                        r.fee1        = fees[i];   // tokenIn → CELO
+                        r.fee2        = celoGdFee; // CELO → G$
+                        r.intermediate = CELO_TOKEN;
+                        return r;
+                    }
+                }
+            }
+        }
+
+        revert("Bloom: no V3 pool found for token");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    //  Internal – V3 swap
+    // ─────────────────────────────────────────────────────────
+
+    function _swapV3(
+        Route memory r,
+        address tokenIn,
+        uint256 amountIn,
+        uint256 minGDOut
+    ) internal returns (uint256 gdOut) {
+        IERC20(tokenIn).approve(SWAP_ROUTER, amountIn);
+        if (r.multiHop) {
+            // Encode packed path: tokenIn –fee1– intermediate –fee2– G$
+            bytes memory path = abi.encodePacked(
+                tokenIn, r.fee1, r.intermediate, r.fee2, GOOD_DOLLAR
+            );
+            gdOut = ISwapRouter02(SWAP_ROUTER).exactInput(
+                ISwapRouter02.ExactInputParams({
+                    path:             path,
+                    recipient:        address(this),
+                    amountIn:         amountIn,
+                    amountOutMinimum: minGDOut
+                })
+            );
+        } else {
+            gdOut = ISwapRouter02(SWAP_ROUTER).exactInputSingle(
+                ISwapRouter02.ExactInputSingleParams({
+                    tokenIn:           tokenIn,
+                    tokenOut:          GOOD_DOLLAR,
+                    fee:               r.fee1,
+                    recipient:         address(this),
+                    amountIn:          amountIn,
+                    amountOutMinimum:  minGDOut,
+                    sqrtPriceLimitX96: 0
+                })
+            );
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────
+    //  View / pure helpers
     // ─────────────────────────────────────────────────────────
 
     function accountStatus(address user) external view returns (
@@ -494,6 +510,9 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         restreamUnlocksAt = a.lastRestream + RESTREAM_COOLDOWN;
     }
 
+    /// @notice Preview what an early stopStream() would cost right now.
+    /// @return fee       The 5% protocol fee that would be deducted from remaining balance.
+    /// @return remaining The G$ the user would keep after the fee.
     function previewEarlyStopFee(address user) external view returns (uint256 fee, uint256 remaining) {
         Account memory acc = accounts[user];
         if (acc.streamTo == address(0) || block.timestamp >= acc.streamEnd) {
@@ -507,21 +526,6 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         uint256 balAfterStream = acc.gdBalance - streamed;
         fee       = balAfterStream * EARLY_STOP_FEE_BPS / 10_000;
         remaining = balAfterStream - fee;
-    }
-
-    function previewFlowRate(uint256 gdAmount, uint256 duration) external pure returns (int96) {
-        return _calcFlowRate(gdAmount, duration);
-    }
-
-    function minGdToStream(uint256 duration) external pure returns (uint256 minRawUnits, uint256 minWholeGD) {
-        uint256 standardMin = duration + SF_DEPOSIT_PERIOD;
-        uint256 floorMin    = SF_MIN_DEPOSIT + duration + 1;
-        minRawUnits = floorMin > standardMin ? floorMin : standardMin;
-        minWholeGD  = (minRawUnits + (10 ** GD_DECIMALS) - 1) / (10 ** GD_DECIMALS);
-    }
-
-    function encodeInitialize() external pure returns (bytes memory) {
-        return abi.encodeWithSignature("initialize()");
     }
 
     function projectCompound(
@@ -549,243 +553,35 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         if (rate < targetPerDay) return type(uint256).max;
     }
 
-    // ─────────────────────────────────────────────────────────
-    //  Internal — UniversalRouter swap helpers
-    // ─────────────────────────────────────────────────────────
-
-    /// @dev Pull tokenIn from caller, approve Permit2, then call the router.
-    function _swapExactInSingle(
-        PoolKey memory key,
-        address tokenIn,
-        uint256 amountIn,
-        uint256 minGDOut
-    ) internal returns (uint256 gdOut) {
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
-        return _swapExactInSingleFromBalance(key, tokenIn, amountIn, minGDOut);
+    function previewFlowRate(uint256 gdAmount, uint256 duration) external pure returns (int96) {
+        return _calcFlowRate(gdAmount, duration);
     }
 
-    /// @dev Tokens already held by this contract. Approve Permit2 + execute swap.
-    function _swapExactInSingleFromBalance(
-        PoolKey memory key,
-        address tokenIn,
-        uint256 amountIn,
-        uint256 minGDOut
-    ) internal returns (uint256 gdOut) {
-        _approvePermit2(tokenIn, amountIn);
-
-        // ── Build V4 actions blob ──────────────────────────────────────────────
-        //
-        //  actions = [ACT_SWAP_EXACT_IN_SINGLE, ACT_SETTLE_ALL, ACT_TAKE_ALL]
-        //
-        //  SWAP_EXACT_IN_SINGLE params:
-        //    (PoolKey key, bool zeroForOne, uint128 amountIn, uint128 amountOutMinimum,
-        //     uint160 sqrtPriceLimitX96, bytes hookData)
-        //
-        //  SETTLE_ALL params:  (Currency currency, uint256 maxAmount)
-        //  TAKE_ALL params:    (Currency currency, uint256 minAmount)
-
-        bool zeroForOne = Currency.unwrap(key.currency0) == tokenIn;
-        require(
-            zeroForOne || Currency.unwrap(key.currency1) == tokenIn,
-            "Bloom: tokenIn not in pool"
-        );
-        require(
-            (zeroForOne ? Currency.unwrap(key.currency1) : Currency.unwrap(key.currency0)) == GOOD_DOLLAR,
-            "Bloom: pool output is not G$"
-        );
-
-        bytes memory actions = abi.encodePacked(
-            ACT_SWAP_EXACT_IN_SINGLE,
-            ACT_SETTLE_ALL,
-            ACT_TAKE_ALL
-        );
-
-        bytes[] memory actionParams = new bytes[](3);
-        actionParams[0] = abi.encode(
-            key,
-            zeroForOne,
-            uint128(amountIn),
-            uint128(minGDOut),
-            uint160(0),  // no price limit
-            bytes("")    // no hook data
-        );
-        actionParams[1] = abi.encode(Currency.wrap(tokenIn), amountIn);
-        actionParams[2] = abi.encode(Currency.wrap(GOOD_DOLLAR), minGDOut);
-
-        // ── Build UniversalRouter command ──────────────────────────────────────
-        bytes memory commands = abi.encodePacked(CMD_V4_SWAP);
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, actionParams);
-
-        uint256 gdBefore = IERC20(GOOD_DOLLAR).balanceOf(address(this));
-
-        // FIX 1: deadline = block.timestamp + SWAP_DEADLINE_BUFFER (30 s) instead
-        //         of block.timestamp, which is trivially manipulable by validators.
-        IUniversalRouter(UNIVERSAL_ROUTER).execute(
-            commands,
-            inputs,
-            block.timestamp + SWAP_DEADLINE_BUFFER
-        );
-
-        uint256 gdAfter = IERC20(GOOD_DOLLAR).balanceOf(address(this));
-
-        gdOut = gdAfter - gdBefore;
-        require(gdOut >= minGDOut, "Bloom: slippage");
+    /// @notice Remix helper — call this to get the `initData` bytes needed for BloomProxy.
+    function encodeInitialize() external pure returns (bytes memory) {
+        return abi.encodeWithSignature("initialize(address)", address(0));
     }
 
-    /// @dev Multi-hop: tokenIn → intermediate → G$.
-    ///      Pulls tokenIn from caller first.
-    function _swapExactInMulti(
-        PoolKey memory startKey,
-        PoolKey memory endKey,
-        address tokenIn,
-        uint256 amountIn,
-        uint256 minGDOut
-    ) internal returns (uint256 gdOut) {
-        IERC20(tokenIn).transferFrom(msg.sender, address(this), amountIn);
-        return _swapExactInMultiFromBalance(startKey, endKey, tokenIn, amountIn, minGDOut);
-    }
-
-    /// @dev Multi-hop with tokens already in contract.
-    function _swapExactInMultiFromBalance(
-        PoolKey memory startKey,
-        PoolKey memory endKey,
-        address tokenIn,
-        uint256 amountIn,
-        uint256 minGDOut
-    ) internal returns (uint256 gdOut) {
-        _approvePermit2(tokenIn, amountIn);
-
-        // Derive currencyIn and the intermediate currency
-        bool z1 = Currency.unwrap(startKey.currency0) == tokenIn;
-        require(z1 || Currency.unwrap(startKey.currency1) == tokenIn, "Bloom: tokenIn not in startKey");
-
-        Currency currencyIn          = z1 ? startKey.currency0 : startKey.currency1;
-        Currency intermediateCurrency = z1 ? startKey.currency1 : startKey.currency0;
-
-        // Validate endKey leads to G$
-        bool z2 = Currency.unwrap(endKey.currency0) == Currency.unwrap(intermediateCurrency);
-        require(z2 || Currency.unwrap(endKey.currency1) == Currency.unwrap(intermediateCurrency), "Bloom: intermediate not in endKey");
-        require(
-            (z2 ? Currency.unwrap(endKey.currency1) : Currency.unwrap(endKey.currency0)) == GOOD_DOLLAR,
-            "Bloom: endKey output is not G$"
-        );
-
-        // ── Build PathKey array for SWAP_EXACT_IN ─────────────────────────────
-        //
-        //  SWAP_EXACT_IN params:
-        //    (Currency currencyIn, PathKey[] path, uint128 amountIn,
-        //     uint128 amountOutMinimum, bytes hookData)
-        //
-        //  Each PathKey encodes one hop:
-        //    intermediateCurrency = the OUTPUT currency of this hop
-        //    fee / tickSpacing / hooks = the pool for this hop
-
-        PathKey[] memory path = new PathKey[](2);
-        // Hop 1: tokenIn → intermediate  (pool = startKey)
-        path[0] = PathKey({
-            intermediateCurrency: intermediateCurrency,
-            fee:                  startKey.fee,
-            tickSpacing:          startKey.tickSpacing,
-            hooks:                startKey.hooks,
-            hookData:             bytes("")
-        });
-        // Hop 2: intermediate → G$  (pool = endKey)
-        path[1] = PathKey({
-            intermediateCurrency: Currency.wrap(GOOD_DOLLAR),
-            fee:                  endKey.fee,
-            tickSpacing:          endKey.tickSpacing,
-            hooks:                endKey.hooks,
-            hookData:             bytes("")
-        });
-
-        bytes memory actions = abi.encodePacked(
-            ACT_SWAP_EXACT_IN,
-            ACT_SETTLE_ALL,
-            ACT_TAKE_ALL
-        );
-
-        bytes[] memory actionParams = new bytes[](3);
-        actionParams[0] = abi.encode(
-            currencyIn,
-            path,
-            uint128(amountIn),
-            uint128(minGDOut),
-            bytes("")   // no extra hook data
-        );
-        actionParams[1] = abi.encode(currencyIn, amountIn);
-        actionParams[2] = abi.encode(Currency.wrap(GOOD_DOLLAR), minGDOut);
-
-        bytes memory commands = abi.encodePacked(CMD_V4_SWAP);
-        bytes[] memory inputs = new bytes[](1);
-        inputs[0] = abi.encode(actions, actionParams);
-
-        uint256 gdBefore = IERC20(GOOD_DOLLAR).balanceOf(address(this));
-
-        // FIX 1: same deadline buffer as single-hop path.
-        IUniversalRouter(UNIVERSAL_ROUTER).execute(
-            commands,
-            inputs,
-            block.timestamp + SWAP_DEADLINE_BUFFER
-        );
-
-        uint256 gdAfter = IERC20(GOOD_DOLLAR).balanceOf(address(this));
-
-        gdOut = gdAfter - gdBefore;
-        require(gdOut >= minGDOut, "Bloom: slippage");
-    }
-
-    /// @dev Grant Permit2 a per-token ERC-20 allowance, then grant the
-    ///      UniversalRouter a Permit2-level spending allowance.
-    ///
-    ///      FIX 5 — Two-tier approval strategy:
-    ///
-    ///      Tier 1 (ERC-20 → Permit2): We set type(uint256).max once and leave it.
-    ///        Permit2 is an immutable, audited singleton; a blanket ERC-20 allowance
-    ///        to it carries the same risk profile as approving a DEX router directly.
-    ///        This avoids a transferFrom + approve on every swap.
-    ///
-    ///      Tier 2 (Permit2 → UniversalRouter): We now check the existing Permit2
-    ///        allowance BEFORE calling IPermit2.approve so we don't emit a redundant
-    ///        on-chain approval for every swap.  We still approve type(uint160).max
-    ///        for gas efficiency, but this is gated behind the real Permit2 view.
-    ///        A comment documents the tradeoff vs. per-tx tight allowances.
-    function _approvePermit2(address token, uint256 /*amount*/) internal {
-        // Tier 1: ERC-20 allowance from this contract to Permit2.
-        uint256 erc20Allowance = IERC20(token).allowance(address(this), PERMIT2);
-        if (erc20Allowance < type(uint128).max) {
-            IERC20(token).approve(PERMIT2, type(uint256).max);
-        }
-
-        // Tier 2: Permit2 allowance from this contract to UniversalRouter.
-        //         Read the current Permit2 state before writing — avoids a
-        //         redundant state write (and its gas cost) on every swap.
-        //
-        //         Tradeoff note: we use type(uint160).max / type(uint48).max for
-        //         maximum gas efficiency.  A tighter per-tx allowance
-        //         (approve → execute → verify) would further reduce blast radius
-        //         if UniversalRouter were ever compromised, at the cost of ~5k
-        //         extra gas per swap.  Current choice is deliberate.
-        (uint160 p2Amount, uint48 p2Expiry, ) = IPermit2(PERMIT2).allowance(
-            address(this),
-            token,
-            UNIVERSAL_ROUTER
-        );
-
-        if (p2Amount < type(uint128).max || p2Expiry < uint48(block.timestamp + 365 days)) {
-            IPermit2(PERMIT2).approve(
-                token,
-                UNIVERSAL_ROUTER,
-                type(uint160).max,
-                type(uint48).max
-            );
-        }
+    /// @notice Returns the minimum raw G$ units needed to produce a non-zero flow rate
+    ///         for a given duration, accounting for Superfluid's 1 G$ minimum deposit floor.
+    /// @dev    Two cases mirror _calcFlowRate:
+    ///         • Low-rate (floor applies): minRaw = SF_MIN_DEPOSIT + duration + 1
+    ///           (need at least 1 unit/sec after covering the 1 G$ floor deposit)
+    ///         • High-rate (standard):     minRaw = duration + SF_DEPOSIT_PERIOD
+    ///         The binding minimum is the larger of the two.
+    function minGdToStream(uint256 duration) external pure returns (uint256 minRawUnits, uint256 minWholeGD) {
+        uint256 standardMin = duration + SF_DEPOSIT_PERIOD;          // Case 1
+        uint256 floorMin    = SF_MIN_DEPOSIT + duration + 1;          // Case 2: deposit floor + 1 unit streamed
+        minRawUnits = floorMin > standardMin ? floorMin : standardMin;
+        minWholeGD  = (minRawUnits + (10 ** GD_DECIMALS) - 1) / (10 ** GD_DECIMALS); // ceil
     }
 
     // ─────────────────────────────────────────────────────────
-    //  Internal — stream lifecycle
+    //  Internal – stream lifecycle
     // ─────────────────────────────────────────────────────────
 
+    /// @param isExpiry true  → natural expiry, no fee
+    ///                 false → user-initiated early stop, 5% fee on remaining balance
     function _stopStreamFor(
         address user,
         Account storage acc,
@@ -801,6 +597,7 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         ICFAv1Forwarder(CFA_FORWARDER).deleteFlow(GOOD_DOLLAR, address(this), recipient, "");
         delete recipientToUser[recipient];
 
+        // Deduct tokens already streamed
         uint256 elapsed = block.timestamp - acc.streamStart;
         uint256 cap     = acc.streamEnd - acc.streamStart;
         if (elapsed > cap) elapsed = cap;
@@ -811,13 +608,18 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
 
         uint256 sfDepositRefund   = _depositAmount(uint96(acc.flowRate));
         uint256 contractGD        = IERC20(GOOD_DOLLAR).balanceOf(address(this));
-        uint256 surplusInContract = contractGD > totalTrackedBalance ? contractGD - totalTrackedBalance : 0;
-        uint256 refund = sfDepositRefund < surplusInContract ? sfDepositRefund : surplusInContract;
+        uint256 surplusInContract = contractGD > totalTrackedBalance
+            ? contractGD - totalTrackedBalance
+            : 0;
+        uint256 refund = sfDepositRefund < surplusInContract
+            ? sfDepositRefund
+            : surplusInContract;
         if (refund > 0) {
             acc.gdBalance       += refund;
             totalTrackedBalance += refund;
         }
 
+        // Early-stop fee: 5% of the remaining balance goes to protocol fees
         uint256 earlyStopFee = 0;
         if (!isExpiry && block.timestamp < acc.streamEnd) {
             earlyStopFee = acc.gdBalance * EARLY_STOP_FEE_BPS / 10_000;
@@ -836,7 +638,7 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
     }
 
     // ─────────────────────────────────────────────────────────
-    //  Internal — accounting / pure helpers
+    //  Internal – accounting helpers
     // ─────────────────────────────────────────────────────────
 
     function _creditUser(address user, uint256 amount) internal {
@@ -844,21 +646,19 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         totalTrackedBalance      += amount;
     }
 
-    function _requireRegisteredPool(address tokenIn) internal view returns (PoolKey memory key) {
-        key = poolRegistry[tokenIn];
-        require(
-            Currency.unwrap(key.currency0) != address(0) &&
-            Currency.unwrap(key.currency1) != address(0),
-            "Bloom: pool not registered"
-        );
-    }
-
     function _calcFlowRate(uint256 gdAmount, uint256 duration) internal pure returns (int96) {
+        // Case 1: high-rate path — calculated deposit >= SF minimum.
         uint256 rate = gdAmount / (duration + SF_DEPOSIT_PERIOD);
+
+        // Case 2: low-rate path — Superfluid's 1 G$ floor deposit applies.
+        // rate * SF_DEPOSIT_PERIOD < SF_MIN_DEPOSIT, so actual deposit = SF_MIN_DEPOSIT.
+        // Constraint: rate * duration + SF_MIN_DEPOSIT <= gdAmount
+        //             => rate <= (gdAmount - SF_MIN_DEPOSIT) / duration
         if (rate * SF_DEPOSIT_PERIOD < SF_MIN_DEPOSIT) {
-            if (gdAmount <= SF_MIN_DEPOSIT) return 0;
+            if (gdAmount <= SF_MIN_DEPOSIT) return 0; // can't cover minimum deposit
             rate = (gdAmount - SF_MIN_DEPOSIT) / duration;
         }
+
         if (rate == 0) return 0;
         uint256 maxRate = uint256(uint96(type(int96).max));
         if (rate > maxRate) rate = maxRate;
@@ -867,6 +667,7 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
 
     function _depositAmount(uint96 flowRate) internal pure returns (uint256) {
         uint256 calculated = uint256(flowRate) * SF_DEPOSIT_PERIOD;
+        // Mirror Superfluid's minimum deposit floor so refund accounting stays accurate.
         return calculated >= SF_MIN_DEPOSIT ? calculated : SF_MIN_DEPOSIT;
     }
 
@@ -883,10 +684,6 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
         require(duration <= 730 days,    "Bloom: max 2 years");
     }
 }
-
-// ─────────────────────────────────────────────────────────
-//  BloomProxy — thin ERC-1967 proxy wrapper
-// ─────────────────────────────────────────────────────────
 
 contract BloomProxy is ERC1967Proxy {
     constructor(address implementation, bytes memory initData)

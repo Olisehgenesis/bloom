@@ -2,7 +2,7 @@ import { createConfig, http } from "wagmi";
 import { celo } from "wagmi/chains";
 import { injected, walletConnect, coinbaseWallet } from "wagmi/connectors";
 
-export const BLOOM_PROXY = "0x7f2Fd90b0D56a44951E6D0810A5301AD1267204a";
+export const BLOOM_PROXY = "0x24e3682aAb422547A30821E268a47a4F1Cc15814";
 export const GOOD_DOLLAR = "0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A";
 
 export const CELO_TOKENS = [

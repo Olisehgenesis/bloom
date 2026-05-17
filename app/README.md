@@ -4,13 +4,12 @@
 
 | Contract | Address |
 |---|---|
-| **BloomProxy** (use this) | `0x9C3e151Af503f5648A5e1E6AC45b80EBDE3Bd03E` |
-| **BloomV1** (implementation only) | `0x93e723F8F0377DC45538BE25c2c0Cbc89f010b89` |
+| **BloomProxy** (use this) | `0x24e3682aAb422547A30821E268a47a4F1Cc15814` |
+| **BloomV1** (implementation only) | `0xDeD7C9ea84CC5dC7d1b1813e8BA613c9A9bC5930` |
 | GoodDollar (G$) | `0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A` |
-| V4 Quoter | `0x28566da1093609182dff2cb2a91cfd72e61d66cd` |
-| UniversalRouter | `0xcb695bc5d3aa22cad1e6df07801b061a05a0233a` |
-| Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` |
-| StateView | `0xbc21f8720babf4b20d195ee5c6e99c52b76f2bfb` |
+| Uniswap V3 Factory | `0xAfE208a311B21f13EF87E33A90049fC17A7acDEc` |
+| Uniswap V3 SwapRouter02 | `0x5615CDAb10dc425a742d643d949a7F474C01abc4` |
+| Uniswap V3 QuoterV2 | `0x82825d0554fA07f7FC52Ab63c961F330fdEFa8E8` |
 
 > Always interact with **BloomProxy**. BloomV1 is the logic contract only.
 
@@ -20,62 +19,55 @@
 
 Every deposit is two off-chain steps then one contract call.
 
-### Step 1 — Quote the best route (off-chain, free)
+### Step 1 — Quote the route (off-chain, free)
 
-Call the **V4 Quoter** at `0x28566da1093609182dff2cb2a91cfd72e61d66cd` to find the best path from `tokenIn` → G$.
+Call the **V3 Factory** at `0xAfE208a311B21f13EF87E33A90049fC17A7acDEc` to find a pool:
 
-Try both:
-- **Single hop**: `tokenIn → G$` directly (if a pool exists)
-- **Two hop**: `tokenIn → CELO → G$` or `tokenIn → USDC → G$` etc.
+```ts
+factory.getPool(tokenIn, GOOD_DOLLAR, fee)  // try 500, 3000, 10000
+```
 
-Pick whichever returns the **highest `amountOut`**. That's the route to use.
+If no direct pool exists, try a two-hop via CELO:
+```ts
+factory.getPool(tokenIn, CELO, fee)         // hop 1
+factory.getPool(CELO, GOOD_DOLLAR, fee)     // hop 2
+```
+
+Read `slot0()` on the found pool to get `sqrtPriceX96` and estimate G$ output.
 
 ---
 
-### Step 2 — Approve Permit2 (one-time per token)
+### Step 2 — Register the route (owner only, one-time per token)
+
+Before users can deposit a token, the owner must register its route:
 
 ```ts
-token.approve(
-  spender: "0x000000000022D473030F116dDEE9F6B43aC78BA3",  // Permit2
-  amount:  MaxUint256
+bloom.registerRoute(
+  tokenAddress,
+  {
+    multiHop:     false,          // true for two-hop
+    fee1:         3000,           // tokenIn→G$ fee (direct), or tokenIn→CELO fee (multihop)
+    fee2:         0,              // CELO→G$ fee (multihop only)
+    intermediate: "0x0000..."     // CELO address (multihop only)
+  }
 )
 ```
 
-Only needs to happen once per token per wallet. Check allowance first.
-
 ---
 
-### Step 3 — Call Bloom
+### Step 3 — Approve & deposit
 
-**If single hop:**
 ```ts
+// Approve BloomProxy to spend tokenIn
+token.approve("0x24e3682aAb422547A30821E268a47a4F1Cc15814", amountIn)
+
+// Deposit — single call regardless of direct or multihop
 bloom.deposit(
-  tokenIn,   // token address
-  amountIn,  // raw amount in token's decimals
-  minGDOut   // quoted amount * 0.99 for 1% slippage
+  tokenIn,    // token address
+  amountIn,   // raw amount in token's decimals
+  splitBps,   // 10000 = 100% swap, 0 = contract default (30%)
+  minGDOut    // estimated G$ * (1 - slippage)
 )
-```
-
-**If two hop:**
-```ts
-bloom.depositMultiHop(
-  startKey,  // PoolKey for tokenIn → intermediate
-  endKey,    // PoolKey for intermediate → G$
-  tokenIn,
-  amountIn,
-  minGDOut
-)
-```
-
-A `PoolKey` is:
-```ts
-{
-  currency0:   "0x...",  // lower address of the two tokens
-  currency1:   "0x...",  // higher address
-  fee:         3000,     // pool fee tier (e.g. 3000 = 0.3%)
-  tickSpacing: 60,       // matches fee tier
-  hooks:       "0x0000000000000000000000000000000000000000"
-}
 ```
 
 ---
@@ -89,13 +81,11 @@ bloom.startStream(
 )
 ```
 
-This can be a separate tx after deposit, or the frontend can batch them with a multicall.
-
 ---
 
 ## Happy Path in Plain English
 
-> User picks token + amount → frontend quotes best route → user approves Permit2 (once) → user calls `deposit` or `depositMultiHop` → contract swaps to G$ → user calls `startStream` with recipient + duration → G$ flows in real time
+> User picks token + amount → frontend probes V3 factory for best route → user approves BloomProxy → user calls `deposit` → contract swaps to G$ via SwapRouter02 → user calls `startStream` with recipient + duration → G$ flows in real time
 
 ---
 
@@ -106,3 +96,8 @@ pnpm dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) to see the app.
+
+
+> Always interact with **BloomProxy**. BloomV1 is the logic contract only.
+
+---
