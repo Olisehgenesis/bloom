@@ -8,8 +8,8 @@ Bloom lets users deposit any token, swap it to G$ via Uniswap V3, then stream G$
 
 | Contract | Address |
 |---|---|
-| **BloomV1** (implementation) | [`0xDeD7C9ea84CC5dC7d1b1813e8BA613c9A9bC5930`](https://celoscan.io/address/0xDeD7C9ea84CC5dC7d1b1813e8BA613c9A9bC5930) |
-| **BloomProxy** (use this one) | [`0x24e3682aAb422547A30821E268a47a4F1Cc15814`](https://celoscan.io/address/0x24e3682aAb422547A30821E268a47a4F1Cc15814) |
+| **BloomV1** (implementation) | [`0x0808dA26ccBbd5dc4a6c8f0230791e5cdA4406E5`](https://celoscan.io/address/0x0808dA26ccBbd5dc4a6c8f0230791e5cdA4406E5) |
+| **BloomProxy** (use this one) | [`0x95040e07aDC388601BF5F823956BE7f36687c826`](https://celoscan.io/address/0x95040e07aDC388601BF5F823956BE7f36687c826) |
 
 > Always interact with **BloomProxy**. BloomV1 is the logic contract only.
 

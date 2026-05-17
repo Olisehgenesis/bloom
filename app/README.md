@@ -4,8 +4,8 @@
 
 | Contract | Address |
 |---|---|
-| **BloomProxy** (use this) | `0x24e3682aAb422547A30821E268a47a4F1Cc15814` |
-| **BloomV1** (implementation only) | `0xDeD7C9ea84CC5dC7d1b1813e8BA613c9A9bC5930` |
+| **BloomProxy** (use this) | `0x95040e07aDC388601BF5F823956BE7f36687c826` |
+| **BloomV1** (implementation only) | `0x0808dA26ccBbd5dc4a6c8f0230791e5cdA4406E5` |
 | GoodDollar (G$) | `0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A` |
 | Uniswap V3 Factory | `0xAfE208a311B21f13EF87E33A90049fC17A7acDEc` |
 | Uniswap V3 SwapRouter02 | `0x5615CDAb10dc425a742d643d949a7F474C01abc4` |
@@ -59,7 +59,7 @@ bloom.registerRoute(
 
 ```ts
 // Approve BloomProxy to spend tokenIn
-token.approve("0x24e3682aAb422547A30821E268a47a4F1Cc15814", amountIn)
+token.approve("0x95040e07aDC388601BF5F823956BE7f36687c826", amountIn)
 
 // Deposit — single call regardless of direct or multihop
 bloom.deposit(
