@@ -72,8 +72,10 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
     address public constant SWAP_ROUTER   = 0x5615CDAb10dc425a742d643d949a7F474C01abc4;
     /// @notice Uniswap V3 Factory on Celo — used for on-chain route auto-discovery.
     address public constant V3_FACTORY    = 0xAfE208a311B21f13EF87E33A90049fC17A7acDEc;
-    /// @notice Native CELO ERC-20 wrapper — used as the default multihop intermediate.
+    /// @notice Native CELO ERC-20 wrapper.
     address public constant CELO_TOKEN    = 0x471EcE3750Da237f93B8E339c536989b8978a438;
+    /// @notice Celo Dollar — used as the default multihop intermediate (has a liquid G$ pool).
+    address public constant CUSD_TOKEN    = 0x765DE816845861e75A25fCA122bb6898B8B1282a;
 
     uint256 internal constant SF_DEPOSIT_PERIOD    = 4 hours;
     /// @notice Superfluid enforces a minimum deposit of 1 G$ (1e18) regardless of flow rate.
@@ -405,7 +407,7 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
     /**
      * @notice Probe the V3 factory to find a valid swap route for `tokenIn` → G$.
      *         Tries direct pools first (all four standard fee tiers),
-     *         then falls back to a 2-hop via CELO if no direct pool exists.
+     *         then falls back to a 2-hop via cUSD if no direct pool exists.
      * @dev    Reverts if no pool is found in either search.
      */
     function _findRoute(address tokenIn) internal view returns (Route memory r) {
@@ -420,23 +422,23 @@ contract BloomV1 is Initializable, OwnableUpgradeable, PausableUpgradeable, UUPS
             }
         }
 
-        // 2. Two-hop: tokenIn → CELO → G$ (skip if tokenIn is CELO itself)
-        if (tokenIn != CELO_TOKEN) {
-            // Find the CELO/G$ pool
-            uint24 celoGdFee;
+        // 2. Two-hop: tokenIn → cUSD → G$ (skip if tokenIn is cUSD itself)
+        if (tokenIn != CUSD_TOKEN) {
+            // Find the cUSD/G$ pool
+            uint24 cusdGdFee;
             for (uint256 i = 0; i < 4; i++) {
-                address pool = IUniswapV3Factory(V3_FACTORY).getPool(CELO_TOKEN, GOOD_DOLLAR, fees[i]);
-                if (pool != address(0)) { celoGdFee = fees[i]; break; }
+                address pool = IUniswapV3Factory(V3_FACTORY).getPool(CUSD_TOKEN, GOOD_DOLLAR, fees[i]);
+                if (pool != address(0)) { cusdGdFee = fees[i]; break; }
             }
-            if (celoGdFee != 0) {
-                // Find the tokenIn/CELO pool
+            if (cusdGdFee != 0) {
+                // Find the tokenIn/cUSD pool
                 for (uint256 i = 0; i < 4; i++) {
-                    address pool = IUniswapV3Factory(V3_FACTORY).getPool(tokenIn, CELO_TOKEN, fees[i]);
+                    address pool = IUniswapV3Factory(V3_FACTORY).getPool(tokenIn, CUSD_TOKEN, fees[i]);
                     if (pool != address(0)) {
-                        r.multiHop    = true;
-                        r.fee1        = fees[i];   // tokenIn → CELO
-                        r.fee2        = celoGdFee; // CELO → G$
-                        r.intermediate = CELO_TOKEN;
+                        r.multiHop     = true;
+                        r.fee1         = fees[i];   // tokenIn → cUSD
+                        r.fee2         = cusdGdFee; // cUSD → G$
+                        r.intermediate = CUSD_TOKEN;
                         return r;
                     }
                 }
