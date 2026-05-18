@@ -137,9 +137,12 @@ function poolHasLiquidity(
  */
 export function useGDQuote(tokenAddress: string): GDQuote {
   const addr   = tokenAddress as `0x${string}`;
+  const isCELO = addr.toLowerCase() === CELO_ADDRESS.toLowerCase();
   const isCUSD = addr.toLowerCase() === CUSD_ADDRESS.toLowerCase();
 
   // ── Step 1: All direct pool addresses (tokenIn/GD) ───────────────────────
+  // Note: CELO/G$ direct pools exist on-chain but only have dust liquidity;
+  //       CELO always routes through cUSD multihop instead.
   const { data: directPools, isLoading: directPoolsLoading } = useReadContracts({
     contracts: FEE_TIERS.map(fee => ({
       address:      V3_FACTORY,
@@ -183,8 +186,9 @@ export function useGDQuote(tokenAddress: string): GDQuote {
   // ── Step 3: Multihop probing — non-CELO, only after direct fully resolved ─
   const directFullyLoaded =
     !directPoolsLoading && (!anyDirect || (!directSlot0sLoading && !directLiquidsLoading));
-  // Allow all non-cUSD tokens (including CELO) to fall back to token→cUSD→G$ multihop
-  const probeMultihop = !isCUSD && directFullyLoaded && !directAddr;
+  // CELO: skip direct (dust liquidity) and probe cUSD multihop immediately.
+  // Others (non-cUSD): fall back to cUSD multihop if no liquid direct pool found.
+  const probeMultihop = isCELO || (!isCUSD && directFullyLoaded && !directAddr);
 
   // All cUSD/GD pool addresses
   const { data: cusdGdPools, isLoading: cusdGdPoolsLoading } = useReadContracts({
@@ -280,8 +284,8 @@ export function useGDQuote(tokenAddress: string): GDQuote {
 
   if (loading) return { gdPerToken: 0, loading: true, error: false, routeType: null };
 
-  // ── Route 1: Direct pool ──────────────────────────────────────────────────
-  if (directAddr && directSlot0) {
+  // ── Route 1: Direct pool (not CELO — its direct pools have dust liquidity) ──
+  if (!isCELO && directAddr && directSlot0) {
     const gdIsToken1 = addr.toLowerCase() < (GOOD_DOLLAR as string).toLowerCase();
     const gdPerToken = sqrtPriceToRatio(directSlot0[0], gdIsToken1);
     const fee1 = FEE_TIERS[directIdx];
