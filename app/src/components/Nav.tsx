@@ -1,10 +1,12 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useAccount, useConnect, useDisconnect, useConnectors } from "wagmi";
+import { useAccount, useConnect, useDisconnect } from "wagmi";
+import { walletConnect } from "wagmi/connectors";
 import { Home, Zap, BarChart2, RefreshCw, X, Copy, LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { Button } from "@/components/ui/button";
 
 const NAV = [
   { href: "/",          icon: Home,       label: "Home" },
@@ -45,7 +47,10 @@ export function WalletButton() {
   const { address, isConnected } = useAccount();
   const { connect }    = useConnect();
   const { disconnect } = useDisconnect();
-  const connectors     = useConnectors();
+  const walletConnectConnector = useMemo(
+    () => walletConnect({ projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? "" }),
+    [],
+  );
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -59,12 +64,15 @@ export function WalletButton() {
   if (isConnected && address) {
     return (
       <>
-        <button onClick={() => setOpen(true)}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-[#DDE3DC]
-                     bg-white text-xs font-medium text-[#111510] shadow-sm">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-2 rounded-full"
+        >
           <span className="w-2 h-2 rounded-full bg-[#1FA36A] animate-pulse" />
           {address.slice(0, 6)}…{address.slice(-4)}
-        </button>
+        </Button>
 
         {/* Connected wallet sheet */}
         <AnimatePresence>
@@ -92,19 +100,26 @@ export function WalletButton() {
                       {address.slice(0,10)}…{address.slice(-8)}
                     </div>
                   </div>
-                  <button onClick={copy}
-                    className="flex items-center gap-1 text-xs text-[#1FA36A] font-semibold">
-                    <Copy size={12} />
-                    {copied ? "Copied!" : "Copy"}
-                  </button>
-                </div>
+                  <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={copy}
+                  className="flex items-center gap-1 text-xs text-[#1FA36A] font-semibold"
+                >
+                  <Copy size={12} />
+                  {copied ? "Copied!" : "Copy"}
+                </Button>
+              </div>
 
-                <button onClick={() => { disconnect(); setOpen(false); }}
-                  className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl
-                             border border-red-200 text-red-500 font-semibold text-sm">
+                <Button
+                  size="md"
+                  variant="danger"
+                  onClick={() => { disconnect(); setOpen(false); }}
+                  className="w-full flex items-center justify-center gap-2"
+                >
                   <LogOut size={15} />
                   Disconnect
-                </button>
+                </Button>
               </motion.div>
             </>
           )}
@@ -114,61 +129,14 @@ export function WalletButton() {
   }
 
   return (
-    <>
-      <button onClick={() => setOpen(true)}
-        className="px-4 py-1.5 rounded-full bg-[#1FA36A] text-white text-xs font-semibold
-                   shadow-sm active:scale-95 transition-transform">
-        Connect
-      </button>
-
-      {/* Connect wallet sheet */}
-      <AnimatePresence>
-        {open && (
-          <>
-            <motion.div initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}
-              onClick={() => setOpen(false)}
-              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" />
-            <motion.div initial={{ y:"100%" }} animate={{ y:0 }} exit={{ y:"100%" }}
-              transition={{ type:"spring", damping:28, stiffness:280 }}
-              className="fixed bottom-0 left-1/2 -translate-x-1/2 z-50 w-full max-w-[430px]
-                         bg-white rounded-t-3xl p-6 pb-10 shadow-2xl">
-              <div className="w-10 h-1 bg-[#DDE3DC] rounded-full mx-auto mb-5" />
-              <div className="flex items-center justify-between mb-5">
-                <span className="font-bold text-[#111510]">Connect Wallet</span>
-                <button onClick={() => setOpen(false)}>
-                  <X size={18} className="text-[#6B7A6E]" />
-                </button>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                {connectors.map(connector => {
-                  const meta = CONNECTOR_META[connector.id] ?? {
-                    label: connector.name,
-                    icon: "🔑",
-                  };
-                  return (
-                    <button key={connector.id}
-                      onClick={() => { connect({ connector }); setOpen(false); }}
-                      className="flex items-center gap-4 p-4 rounded-2xl border border-[#DDE3DC]
-                                 hover:border-[#1FA36A]/40 hover:bg-[#F7F6F1] transition-colors text-left">
-                      <span className="text-2xl">{meta.icon}</span>
-                      <div>
-                        <div className="font-semibold text-sm text-[#111510]">{meta.label}</div>
-                        <div className="text-xs text-[#6B7A6E] mt-0.5">
-                          {connector.id === "walletConnect" && "Scan QR with any mobile wallet"}
-                          {connector.id === "injected"      && "MetaMask or browser extension"}
-                          {connector.id === "coinbaseWallet"&& "Coinbase Wallet app"}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-    </>
+    <Button
+      size="sm"
+      variant="primary"
+      onClick={() => connect({ connector: walletConnectConnector })}
+      className="rounded-full"
+    >
+      WalletConnect
+    </Button>
   );
 }
 

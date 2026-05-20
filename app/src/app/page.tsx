@@ -1,7 +1,10 @@
 "use client";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { useAccount, useConnect } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { walletConnect } from "wagmi/connectors";
+import { createClient } from "@/utils/supabase/client";
 import { WalletButton, BottomNav } from "@/components/Nav";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
@@ -27,9 +30,47 @@ function StreamSVG() {
   );
 }
 
+const supabase = createClient();
+
 export default function Home() {
+  const router = useRouter();
   const { isConnected } = useAccount();
   const { connect } = useConnect();
+  const [moneyDisplay, setMoneyDisplay] = useState(820);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+      if (error) {
+        console.error("Supabase session check failed:", error);
+        return;
+      }
+      if (data?.session) {
+        router.replace("/dashboard");
+      }
+    };
+
+    checkSession();
+  }, [router]);
+
+  useEffect(() => {
+    const target = isConnected ? 1520 : 820;
+    let frame: number;
+    const duration = 1200;
+    const startTime = performance.now();
+
+    const animate = (time: number) => {
+      const progress = Math.min((time - startTime) / duration, 1);
+      setMoneyDisplay(Math.round(target * progress));
+      if (progress < 1) {
+        frame = requestAnimationFrame(animate);
+      }
+    };
+
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, [isConnected]);
+
   return (
     <div className="flex flex-col min-h-screen pb-24" style={{ background: "var(--bloom-bg)" }}>
       {/* Top bar */}
@@ -40,7 +81,12 @@ export default function Home() {
           </span>
           <span className="text-[15px] font-semibold text-[#111510] tracking-tight">Bloom</span>
         </div>
-        <WalletButton />
+        <div className="flex items-center gap-2">
+          <Link href="/login" className="rounded-2xl border border-[#DDE3DC] bg-white px-4 py-2 text-sm font-semibold text-[#111510] transition hover:border-[#1FA36A] hover:text-[#1FA36A]">
+            Login
+          </Link>
+          <WalletButton />
+        </div>
       </header>
       <main className="flex-1 px-5 flex flex-col gap-6">
         {/* Hero */}
@@ -51,7 +97,7 @@ export default function Home() {
             <span className="text-xs font-medium text-[#1FA36A]">Live on Celo · Superfluid + GoodDollar</span>
           </motion.div>
           <motion.h1 initial={{ opacity:0,y:16 }} animate={{ opacity:1,y:0 }} transition={{ delay:0.1 }}
-            className="text-[34px] font-bold leading-[1.15] tracking-tight text-[#111510]">
+            className="text-[34px] font-bold leading-[1.05] tracking-tight text-[#111510] font-display">
             Let your money<br /><span className="text-[#1FA36A]">keep flowing.</span>
           </motion.h1>
           <motion.p initial={{ opacity:0 }} animate={{ opacity:1 }} transition={{ delay:0.25 }}
@@ -62,6 +108,21 @@ export default function Home() {
             className="w-full animate-float">
             <StreamSVG />
           </motion.div>
+
+          <motion.div initial={{ opacity:0,y:12 }} animate={{ opacity:1,y:0 }} transition={{ delay:0.4 }}
+            className="w-full overflow-hidden rounded-[2rem] border border-[#DDE3DC] bg-white/90 p-5 shadow-2xl shadow-[#1FA36A]/10">
+            <div className="text-[10px] uppercase tracking-[0.35em] text-[#6B7A6E]">Bloom flow</div>
+            <div className="mt-3 flex flex-wrap items-end gap-3">
+              <span className="text-4xl font-semibold text-[#111510] font-display">{moneyDisplay.toLocaleString()}</span>
+              <span className="text-lg font-semibold text-[#1FA36A]">G$</span>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-[#6B7A6E] max-w-xl">
+              {isConnected
+                ? "Your balance is rising with every stream. Keep Bloom active and watch your money move."
+                : "Connect your wallet to see your live Bloom balance grow in real time."}
+            </p>
+          </motion.div>
+
           {isConnected ? (
             <Link href="/stream"
               className="flex items-center gap-2 bg-[#1FA36A] text-white px-6 py-3.5 rounded-2xl
@@ -69,7 +130,7 @@ export default function Home() {
               Start Streaming <ArrowRight size={16} />
             </Link>
           ) : (
-            <button onClick={() => connect({ connector: injected() })}
+            <button onClick={() => connect({ connector: walletConnect({ projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? "" }) })}
               className="flex items-center gap-2 bg-[#1FA36A] text-white px-6 py-3.5 rounded-2xl
                          font-semibold text-sm shadow-lg shadow-[#1FA36A]/25 active:scale-95 transition-transform">
               Connect Wallet <ArrowRight size={16} />
@@ -84,7 +145,7 @@ export default function Home() {
           {[["01","Deposit any Celo token","CELO, cUSD, cEUR…"],
             ["02","Bloom swaps → G$","Via Uniswap v4 on Celo"],
             ["03","Stream in real-time","Superfluid CFA protocol"],
-            ["04","Restream & compound","Target: 300k G$/day"]].map(([n,title,sub]) => (
+            ["04","Restream & compound","Aim for a higher G$/day goal"]].map(([n,title,sub]) => (
             <div key={n} className="flex items-start gap-3 mb-3 last:mb-0">
               <span className="w-6 h-6 rounded-lg bg-[#1FA36A]/10 text-[#1FA36A] text-[11px]
                                font-bold flex items-center justify-center flex-shrink-0 mt-0.5">{n}</span>

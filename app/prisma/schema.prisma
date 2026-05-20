@@ -1,0 +1,19 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Wallet {
+  id                  String   @id @default(uuid())
+  userId              String?  @map("user_id")
+  address             String   @unique
+  encryptedPrivateKey String?  @map("encrypted_private_key")
+  source              String
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+}

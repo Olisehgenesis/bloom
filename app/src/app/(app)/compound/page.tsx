@@ -11,7 +11,7 @@ import {
 } from "@/lib/useBloom";
 import type { Address } from "viem";
 
-const TARGET      = 300_000; // G$/day goal
+const GOAL_PER_DAY = 300_000; // G$/day goal
 const CYCLES_LIST = [1, 5, 10, 20, 50];
 
 const DURATION_OPTIONS = [
@@ -28,8 +28,8 @@ export default function CompoundPage() {
   const [restreamDuration, setRestreamDuration] = useState(DURATION_OPTIONS[1]);
 
   const currentRate = account?.flowRatePerDay ?? 0;
-  const pctToTarget = currentRate > 0
-    ? Math.min(Math.round((currentRate / TARGET) * 1000) / 10, 100)
+  const pctToGoal = currentRate > 0
+    ? Math.min(Math.round((currentRate / GOAL_PER_DAY) * 1000) / 10, 100)
     : 0;
 
   async function handleRestream() {
@@ -73,7 +73,7 @@ export default function CompoundPage() {
                          rounded-full px-4 py-2 w-fit mx-auto">
               <Target size={12} className="text-[#1FA36A]" />
               <span className="text-xs font-semibold text-[#1FA36A]">
-                {pctToTarget}% of 300k G$/day target
+                {pctToGoal}% of daily goal
               </span>
             </motion.div>
 
@@ -104,7 +104,7 @@ export default function CompoundPage() {
               })}
               <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-white border border-[#DDE3DC]
                               rounded-full px-3 py-1 text-[10px] font-semibold text-[#111510] shadow-sm whitespace-nowrap">
-                Target: 300,000 G$/day
+                Daily goal
               </div>
             </motion.div>
 
@@ -132,7 +132,7 @@ export default function CompoundPage() {
               <div className="flex flex-col gap-2">
                 {CYCLES_LIST.map(c => {
                   const val = clientProjectCompound(Math.round(currentRate), pct, c);
-                  const hit = val >= TARGET;
+                  const hit = val >= GOAL_PER_DAY;
                   return (
                     <div key={c} className={`flex items-center justify-between px-4 py-2.5 rounded-xl
                       border transition-colors

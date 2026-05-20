@@ -139,6 +139,8 @@ export function useGDQuote(tokenAddress: string): GDQuote {
   const addr   = tokenAddress as `0x${string}`;
   const isCELO = addr.toLowerCase() === CELO_ADDRESS.toLowerCase();
   const isCUSD = addr.toLowerCase() === CUSD_ADDRESS.toLowerCase();
+  // G$ deposited directly — 1:1, no swap, no pool needed
+  const isGD   = addr.toLowerCase() === (GOOD_DOLLAR as string).toLowerCase();
 
   // ── Step 1: All direct pool addresses (tokenIn/GD) ───────────────────────
   // Note: CELO/G$ direct pools exist on-chain but only have dust liquidity;
@@ -283,6 +285,11 @@ export function useGDQuote(tokenAddress: string): GDQuote {
     ));
 
   if (loading) return { gdPerToken: 0, loading: true, error: false, routeType: null };
+
+  // ── G$ direct deposit — 1:1, no swap needed ───────────────────────────────
+  if (isGD) {
+    return { gdPerToken: 1, loading: false, error: false, routeType: "direct" };
+  }
 
   // ── Route 1: Direct pool (not CELO — its direct pools have dust liquidity) ──
   if (!isCELO && directAddr && directSlot0) {

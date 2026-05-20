@@ -9,9 +9,13 @@ Bloom lets users deposit any token, swap it to G$ via Uniswap V3, then stream G$
 | Contract | Address |
 |---|---|
 | **BloomV1** (implementation) | [`0x0808dA26ccBbd5dc4a6c8f0230791e5cdA4406E5`](https://celoscan.io/address/0x0808dA26ccBbd5dc4a6c8f0230791e5cdA4406E5) |
-| **BloomProxy** (use this one) | [`0x95040e07aDC388601BF5F823956BE7f36687c826`](https://celoscan.io/address/0x95040e07aDC388601BF5F823956BE7f36687c826) |
+| **BloomProxy V1** (use this one) | [`0x95040e07aDC388601BF5F823956BE7f36687c826`](https://celoscan.io/address/0x95040e07aDC388601BF5F823956BE7f36687c826) |
+| **BloomV2** (implementation) | [`0xd79aB6Efda8192D5E715d6bd975042f96F098F1F`](https://celoscan.io/address/0xd79aB6Efda8192D5E715d6bd975042f96F098F1F) |
+| **BloomProxy V2** (use this one) | [`0x754BeaE204d91aD6bFf2f5eED0fB4D6fD5e0c89d`](https://celoscan.io/address/0x754BeaE204d91aD6bFf2f5eED0fB4D6fD5e0c89d) |
 
-> Always interact with **BloomProxy**. BloomV1 is the logic contract only.
+> Always interact with the **proxy**, not the implementation directly.
+>
+> To deploy the V2 proxy, call `new ERC1967Proxy(0xd79aB6Efda8192D5E715d6bd975042f96F098F1F, abi.encodeWithSignature("initialize()"))` from the owner wallet, then call `registerRoute(CELO_TOKEN, ...)` and `registerRoute(CUSD_TOKEN, ...)` on the new proxy.
 
 ---
 

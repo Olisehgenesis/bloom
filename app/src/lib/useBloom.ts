@@ -1,195 +1,43 @@
 import { useReadContract, useWriteContract, usePublicClient } from "wagmi";
 import { useState } from "react";
 import type { Address } from "viem";
-import { BLOOM_PROXY } from "./web3";
+import { BLOOM_PROXY, GOOD_DOLLAR } from "./web3";
+import { BLOOM_ABI } from "./bloomAbi";
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  Full BloomV1 ABI — every public / external function + all public state vars
+//  Known-good on-chain routes (confirmed liquid pools, May 2026)
+//  Register these via registerRoute() from the owner to bypass hint entirely.
 // ─────────────────────────────────────────────────────────────────────────────
 
-export const BLOOM_ABI = [
-  // ── Views ──────────────────────────────────────────────────────────────────
-  {
-    name: "accountStatus",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "user", type: "address" }],
-    outputs: [
-      { name: "gdBalance",         type: "uint256" },
-      { name: "streaming",         type: "bool"    },
-      { name: "recipient",         type: "address" },
-      { name: "flowRate",          type: "int96"   },
-      { name: "streamEnd",         type: "uint256" },
-      { name: "secondsLeft",       type: "uint256" },
-      { name: "restreamCount",     type: "uint256" },
-      { name: "restreamUnlocksAt", type: "uint256" },
-    ],
+export const KNOWN_ROUTES = {
+  /** CELO → cUSD (fee=100) → G$ (fee=10000) */
+  CELO: {
+    multiHop:      true  as const,
+    fee1:          100   as const,   // CELO/cUSD  0x2d70cBAb… liq~87T
+    fee2:          10000 as const,   // cUSD/G$    0x9491d57c… liq~1.3Q
+    fee3:          0     as const,
+    intermediate:  "0x765DE816845861e75A25fCA122bb6898B8B1282a" as `0x${string}`,
+    intermediate2: "0x0000000000000000000000000000000000000000" as `0x${string}`,
   },
-  {
-    name: "previewEarlyStopFee",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "user", type: "address" }],
-    outputs: [
-      { name: "fee",       type: "uint256" },
-      { name: "remaining", type: "uint256" },
-    ],
+  /** cUSD → G$ direct (fee=10000) */
+  cUSD: {
+    multiHop:      false as const,
+    fee1:          10000 as const,   // cUSD/G$    0x9491d57c… liq~1.3Q
+    fee2:          0     as const,
+    fee3:          0     as const,
+    intermediate:  "0x0000000000000000000000000000000000000000" as `0x${string}`,
+    intermediate2: "0x0000000000000000000000000000000000000000" as `0x${string}`,
   },
-  {
-    name: "routes",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "token", type: "address" }],
-    outputs: [
-      { name: "multiHop",     type: "bool"    },
-      { name: "fee1",         type: "uint24"  },
-      { name: "fee2",         type: "uint24"  },
-      { name: "intermediate", type: "address" },
-    ],
-  },
-  {
-    name: "totalTrackedBalance",
-    type: "function",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-  {
-    name: "collectedFees",
-    type: "function",
-    stateMutability: "view",
-    inputs: [],
-    outputs: [{ name: "", type: "uint256" }],
-  },
-  {
-    name: "recipientToUser",
-    type: "function",
-    stateMutability: "view",
-    inputs: [{ name: "recipient", type: "address" }],
-    outputs: [{ name: "", type: "address" }],
-  },
-  // ── Pure ───────────────────────────────────────────────────────────────────
-  {
-    name: "previewFlowRate",
-    type: "function",
-    stateMutability: "pure",
-    inputs: [
-      { name: "gdAmount",  type: "uint256" },
-      { name: "duration",  type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "int96" }],
-  },
-  {
-    name: "minGdToStream",
-    type: "function",
-    stateMutability: "pure",
-    inputs: [{ name: "duration", type: "uint256" }],
-    outputs: [
-      { name: "minRawUnits", type: "uint256" },
-      { name: "minWholeGD",  type: "uint256" },
-    ],
-  },
-  {
-    name: "projectCompound",
-    type: "function",
-    stateMutability: "pure",
-    inputs: [
-      { name: "startRatePerDay", type: "uint256" },
-      { name: "pctIncrease",     type: "uint256" },
-      { name: "cycles",          type: "uint256" },
-    ],
-    outputs: [{ name: "ratePerDay", type: "uint256" }],
-  },
-  {
-    name: "cyclesTo300k",
-    type: "function",
-    stateMutability: "pure",
-    inputs: [
-      { name: "startRatePerDay", type: "uint256" },
-      { name: "pctIncrease",     type: "uint256" },
-      { name: "targetPerDay",    type: "uint256" },
-    ],
-    outputs: [{ name: "cycles", type: "uint256" }],
-  },
-  // ── Writes ─────────────────────────────────────────────────────────────────
-  {
-    name: "deposit",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "tokenIn",  type: "address" },
-      { name: "amountIn", type: "uint256" },
-      { name: "splitBps", type: "uint256" },
-      { name: "minGDOut", type: "uint256" },
-      {
-        name: "hint", type: "tuple",
-        components: [
-          { name: "multiHop",     type: "bool"    },
-          { name: "fee1",         type: "uint24"  },
-          { name: "fee2",         type: "uint24"  },
-          { name: "intermediate", type: "address" },
-        ],
-      },
-    ],
-    outputs: [],
-  },
-  {
-    name: "startStream",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "recipient", type: "address" },
-      { name: "duration",  type: "uint256" },
-    ],
-    outputs: [],
-  },
-  {
-    name: "stopStream",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [],
-    outputs: [],
-  },
-  {
-    name: "triggerExpiry",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "user", type: "address" }],
-    outputs: [],
-  },
-  {
-    name: "increaseStream",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "newFlowRate", type: "int96" }],
-    outputs: [],
-  },
-  {
-    name: "decreaseStream",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "newFlowRate", type: "int96" }],
-    outputs: [],
-  },
-  {
-    name: "restream",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "newRecipient", type: "address" },
-      { name: "duration",     type: "uint256" },
-      { name: "newFlowRate",  type: "int96"   },
-    ],
-    outputs: [],
-  },
-  {
-    name: "withdraw",
-    type: "function",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "amount", type: "uint256" }],
-    outputs: [],
-  },
-] as const;
+} as const;
+
+export type BloomRoute = {
+  multiHop: boolean;
+  fee1: number;
+  fee2: number;
+  fee3: number;
+  intermediate: Address;
+  intermediate2: Address;
+};
 
 export const ERC20_ABI = [
   {
@@ -309,15 +157,10 @@ export interface DepositAndStreamParams {
   recipient:        Address;
   durationSec:      number;
   currentAllowance: bigint;
-  /** 1–10000 bps. 10000 = 100% swap (default, no split). 0 = contract default (30%). */
+  /** 1–10000 bps. 10000 = 100% swap (default). */
   splitBps?:        number;
   /** When true, deposit but skip startStream (deposit-only mode). */
   depositOnly?:     boolean;
-  /** Route hint: obtained from useGDQuote() and passed to the contract's deposit(). */
-  multiHop:         boolean;
-  fee1:             number;
-  fee2:             number;
-  intermediate:     Address;
 }
 
 export interface RestreamParams {
@@ -404,6 +247,7 @@ export function usePreviewFlowRate(gdAmountWei: bigint, durationSec: number) {
   return {
     perSecond: wei ? Number(wei) / 1e18 : 0,
     perDay:    wei ? Number(wei) / 1e18 * 86_400 : 0,
+    rawWei:    wei ?? 0n,
     loading:   isLoading,
   };
 }
@@ -514,9 +358,11 @@ export function useBloomWrite() {
     setStep("error");
   }
 
-  /** Approve (if needed) → deposit (auto-routing) → optionally startStream */
+  /** Approve (if needed) → deposit (auto-routing or direct G$) → optionally startStream */
   async function depositAndStream(p: DepositAndStreamParams) {
     try {
+      const isGD = p.tokenAddress.toLowerCase() === GOOD_DOLLAR.toLowerCase();
+
       if (p.currentAllowance < p.amountBig) {
         setStep("approving");
         await _wait(await writeContractAsync({
@@ -528,18 +374,27 @@ export function useBloomWrite() {
       }
 
       setStep("depositing");
-      await _wait(await writeContractAsync({
-        address:      BLOOM_PROXY as Address,
-        abi:          BLOOM_ABI,
-        functionName: "deposit",
-        args:         [
-          p.tokenAddress,
-          p.amountBig,
-          BigInt(p.splitBps ?? 10000),
-          p.minGDOut,
-          { multiHop: p.multiHop, fee1: p.fee1, fee2: p.fee2, intermediate: p.intermediate },
-        ],
-      }));
+      if (isGD) {
+        // Direct G$ deposit — no swap, no route hint needed
+        await _wait(await writeContractAsync({
+          address:      BLOOM_PROXY as Address,
+          abi:          BLOOM_ABI,
+          functionName: "depositGD",
+          args:         [p.amountBig],
+        }));
+      } else {
+        await _wait(await writeContractAsync({
+          address:      BLOOM_PROXY as Address,
+          abi:          BLOOM_ABI,
+          functionName: "deposit",
+          args:         [
+            p.tokenAddress,
+            p.amountBig,
+            BigInt(p.splitBps ?? 10000),
+            p.minGDOut,
+          ],
+        }));
+      }
 
       if (p.depositOnly) { setStep("done"); return; }
 
@@ -611,5 +466,139 @@ export function useBloomWrite() {
     } catch (e) { _catch(e); }
   }
 
-  return { step, error, reset, depositAndStream, startStreamOnly, stopStream, restream, withdraw };
+  /** Deposit any token (or G$ directly) then increase the active stream rate using the new balance. */
+  async function topUpAndIncrease(p: {
+    userAddress:      Address;
+    tokenAddress:     Address;
+    amountBig:        bigint;
+    minGDOut:         bigint;
+    currentAllowance: bigint;
+    splitBps?:        number;
+    remainingSec:     number;
+  }) {
+    try {
+      const isGD = p.tokenAddress.toLowerCase() === GOOD_DOLLAR.toLowerCase();
+
+      if (p.currentAllowance < p.amountBig) {
+        setStep("approving");
+        await _wait(await writeContractAsync({
+          address:      p.tokenAddress,
+          abi:          ERC20_ABI,
+          functionName: "approve",
+          args:         [BLOOM_PROXY as Address, p.amountBig],
+        }));
+      }
+
+      setStep("depositing");
+      if (isGD) {
+        await _wait(await writeContractAsync({
+          address:      BLOOM_PROXY as Address,
+          abi:          BLOOM_ABI,
+          functionName: "depositGD",
+          args:         [p.amountBig],
+        }));
+      } else {
+        await _wait(await writeContractAsync({
+          address:      BLOOM_PROXY as Address,
+          abi:          BLOOM_ABI,
+          functionName: "deposit",
+          args:         [p.tokenAddress, p.amountBig, BigInt(p.splitBps ?? 10000), p.minGDOut],
+        }));
+      }
+
+      // Re-read on-chain balance after deposit settled — compute the exact new rate.
+      setStep("streaming");
+      type RawStatus = readonly [bigint, boolean, Address, bigint, bigint, bigint, bigint, bigint];
+      const status = await publicClient!.readContract({
+        address:      BLOOM_PROXY as Address,
+        abi:          BLOOM_ABI,
+        functionName: "accountStatus",
+        args:         [p.userAddress],
+      }) as RawStatus;
+      const newBalance  = status[0]; // gdBalance in wei
+      const recipient   = status[2] as Address;
+      const currentRate = status[3]; // existing flowRate
+
+      const newRate = await publicClient!.readContract({
+        address:      BLOOM_PROXY as Address,
+        abi:          BLOOM_ABI,
+        functionName: "previewFlowRate",
+        args:         [newBalance, BigInt(p.remainingSec)],
+      }) as bigint;
+
+      if (newRate <= currentRate) {
+        throw new Error("Deposit too small to increase stream rate for the remaining duration.");
+      }
+
+      await _wait(await writeContractAsync({
+        address:      BLOOM_PROXY as Address,
+        abi:          BLOOM_ABI,
+        functionName: "increaseStream",
+        args:         [recipient, newRate],
+      }));
+
+      setStep("done");
+    } catch (e) { _catch(e); }
+  }
+
+  return { step, error, reset, depositAndStream, startStreamOnly, stopStream, restream, withdraw, topUpAndIncrease };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  Admin hook — owner-only operations (registerRoute, pause/unpause)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function useBloomAdmin() {
+  const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
+
+  async function _wait(hash: `0x${string}`) {
+    const receipt = await publicClient!.waitForTransactionReceipt({ hash });
+    if (receipt.status === "reverted") throw new Error("Transaction reverted");
+  }
+
+  async function registerRoute(
+    token: Address,
+    route: BloomRoute,
+  ) {
+    return _wait(await writeContractAsync({
+      address:      BLOOM_PROXY as Address,
+      abi:          BLOOM_ABI,
+      functionName: "registerRoute",
+      args:         [token, route],
+    }));
+  }
+
+  async function pause() {
+    return _wait(await writeContractAsync({
+      address: BLOOM_PROXY as Address, abi: BLOOM_ABI, functionName: "pause", args: [],
+    }));
+  }
+
+  async function unpause() {
+    return _wait(await writeContractAsync({
+      address: BLOOM_PROXY as Address, abi: BLOOM_ABI, functionName: "unpause", args: [],
+    }));
+  }
+
+  async function collectFees(to: Address) {
+    return _wait(await writeContractAsync({
+      address: BLOOM_PROXY as Address, abi: BLOOM_ABI, functionName: "collectFees", args: [to],
+    }));
+  }
+
+  async function clearRoute(token: Address) {
+    return _wait(await writeContractAsync({
+      address: BLOOM_PROXY as Address, abi: BLOOM_ABI, functionName: "clearRoute", args: [token],
+    }));
+  }
+
+  async function emergencyWithdraw(token: Address, to: Address, amount: bigint) {
+    return _wait(await writeContractAsync({
+      address: BLOOM_PROXY as Address, abi: BLOOM_ABI, functionName: "emergencyWithdraw",
+      args: [token, to, amount],
+    }));
+  }
+
+  return { registerRoute, pause, unpause, collectFees, clearRoute, emergencyWithdraw };
 }
