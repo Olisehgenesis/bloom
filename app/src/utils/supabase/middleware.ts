@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
-import { verifyWalletToken, WALLET_AUTH_COOKIE } from "@/lib/walletAuth";
+import { peekWalletToken, WALLET_AUTH_COOKIE } from "@/lib/walletAuth";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -51,15 +51,16 @@ export const createClient = async (request: NextRequest) => {
     const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
     if (isProtected && !user) {
-      // Allow if the request carries a valid wallet-session cookie instead.
+      // Allow if the request carries a structurally-valid wallet-session
+      // cookie. We deliberately do NOT verify the HMAC here: the signing
+      // secret may not be available in the Edge runtime (e.g. when only
+      // SUPABASE_SERVICE_ROLE_KEY is configured on Vercel), and a verify
+      // failure here would loop the user back to /login even though every
+      // API route (Node runtime) sees them as authenticated. The real MAC
+      // check happens server-side in `/api/auth/me` and other Node routes,
+      // which is the source of truth for protected data.
       const walletToken = request.cookies.get(WALLET_AUTH_COOKIE)?.value;
-      let walletOk = false;
-      try {
-        walletOk = !!(await verifyWalletToken(walletToken));
-      } catch (e) {
-        console.error("[middleware] wallet token verify failed:", e);
-        walletOk = false;
-      }
+      const walletOk = !!peekWalletToken(walletToken);
       if (!walletOk) {
         const url = request.nextUrl.clone();
         url.pathname = "/login";

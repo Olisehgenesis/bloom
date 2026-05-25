@@ -85,3 +85,28 @@ export const verifyWalletToken = async (
     return null;
   }
 };
+
+/**
+ * Structural-only check used by Edge middleware: validates the token shape and
+ * expiry WITHOUT verifying the HMAC. Real MAC verification happens in API
+ * routes (`/api/auth/me`) and server components, which always run on Node
+ * where the signing secret is reliably available. This avoids redirect loops
+ * caused by Edge/Node env-var asymmetry (e.g. when `SUPABASE_SERVICE_ROLE_KEY`
+ * is the only configured secret and is not exposed to Edge middleware).
+ *
+ * A forged cookie that passes this peek still cannot reach any protected data
+ * — the protected API routes re-verify the MAC server-side.
+ */
+export const peekWalletToken = (
+  token: string | undefined | null,
+): { address: `0x${string}`; exp: number } | null => {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+  const [address, expStr, mac] = parts;
+  if (!address || !expStr || !mac) return null;
+  if (!/^0x[a-f0-9]{40}$/i.test(address)) return null;
+  const exp = Number(expStr);
+  if (!Number.isFinite(exp) || exp * 1000 < Date.now()) return null;
+  return { address: address.toLowerCase() as `0x${string}`, exp };
+};
