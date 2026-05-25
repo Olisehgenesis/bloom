@@ -134,22 +134,51 @@ export function NavRail({ className }: { className?: string }) {
 }
 
 /* ─── Wallet button + connect sheet ─── */
+
+// Friendlier ordering when multiple injected wallets are announced via
+// EIP-6963 (matches login screen). Lowercased substring match against
+// `connector.name`.
+const WALLET_PRIORITY = [
+  "metamask",
+  "rabby",
+  "coinbase",
+  "walletconnect",
+  "trust",
+  "phantom",
+  "rainbow",
+  "brave",
+  "okx",
+  "bitget",
+  "injected",
+];
+
 export function WalletButton() {
   const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
+  const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
-  // Use the WalletConnect connector that's already registered in the wagmi
-  // config. Creating a new instance here would cause useAccount() to miss the
-  // resulting connection (state is bound per connector instance).
-  const walletConnectConnector = useMemo(
-    () => connectors.find((c) => c.id === "walletConnect" || c.type === "walletConnect"),
-    [connectors],
-  );
-  const injectedConnector = useMemo(
-    () => connectors.find((c) => c.id === "injected" || c.type === "injected"),
-    [connectors],
-  );
+
+  // Dedupe by lowercased name, then sort by WALLET_PRIORITY index.
+  const sortedConnectors = useMemo(() => {
+    const seen = new Set<string>();
+    const unique = connectors.filter((c) => {
+      const key = (c.name || c.id).toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    return unique.sort((a, b) => {
+      const ai = WALLET_PRIORITY.findIndex((p) => (a.name || a.id).toLowerCase().includes(p));
+      const bi = WALLET_PRIORITY.findIndex((p) => (b.name || b.id).toLowerCase().includes(p));
+      const aRank = ai === -1 ? WALLET_PRIORITY.length : ai;
+      const bRank = bi === -1 ? WALLET_PRIORITY.length : bi;
+      return aRank - bRank;
+    });
+  }, [connectors]);
+
   const [open, setOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [connectingId, setConnectingId] = useState<string | null>(null);
+  const [connectError, setConnectError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const verified = useGoodDollarVerified(address);
 
@@ -159,6 +188,25 @@ export function WalletButton() {
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
+
+  const handlePickConnector = (connector: (typeof connectors)[number]) => {
+    setConnectError(null);
+    setConnectingId(connector.id);
+    connect(
+      { connector },
+      {
+        onSuccess: () => {
+          setConnectingId(null);
+          setPickerOpen(false);
+        },
+        onError: (err) => {
+          console.error(`${connector.name} connect failed:`, err);
+          setConnectingId(null);
+          setConnectError(err?.message || `${connector.name} connect failed.`);
+        },
+      },
+    );
+  };
 
   if (isConnected && address) {
     return (
@@ -217,15 +265,51 @@ export function WalletButton() {
     );
   }
 
-  const preferred = injectedConnector ?? walletConnectConnector;
   return (
-    <Button
-      size="pill"
-      onClick={() => preferred && connect({ connector: preferred })}
-      disabled={!preferred}
-    >
-      <Wallet size={16} />
-      Connect
-    </Button>
+    <>
+      <Button size="pill" onClick={() => setPickerOpen(true)} disabled={sortedConnectors.length === 0}>
+        <Wallet size={16} />
+        Connect
+      </Button>
+
+      <Sheet
+        open={pickerOpen}
+        onOpenChange={(next) => {
+          setPickerOpen(next);
+          if (!next) {
+            setConnectError(null);
+            setConnectingId(null);
+          }
+        }}
+        title="Connect wallet"
+        description="Pick the wallet you want to connect."
+      >
+        <div className="flex flex-col gap-2">
+          {sortedConnectors.length === 0 && (
+            <p className="text-sm text-[color:var(--muted-foreground)]">
+              No wallets detected. Install MetaMask, Rabby, Coinbase Wallet or another EIP-1193 wallet extension.
+            </p>
+          )}
+          {sortedConnectors.map((connector) => {
+            const busy = (isPending && connectingId === connector.id) || connectingId === connector.id;
+            return (
+              <Button
+                key={connector.uid ?? connector.id}
+                variant="secondary"
+                onClick={() => handlePickConnector(connector)}
+                disabled={busy || isPending}
+                className="justify-between"
+              >
+                <span className="truncate">{connector.name || connector.id}</span>
+                {busy ? <span className="text-xs">Connecting…</span> : null}
+              </Button>
+            );
+          })}
+          {connectError && (
+            <p className="mt-2 text-sm text-rose-600 dark:text-rose-400">{connectError}</p>
+          )}
+        </div>
+      </Sheet>
+    </>
   );
 }
