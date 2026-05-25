@@ -387,6 +387,14 @@ export default function DashboardPage() {
         const meJson = await meRes.json();
         if (meRes.ok && meJson?.authenticated) {
           setAuthMethod(meJson.method === "wallet" ? "wallet" : "supabase");
+          // For SIWE users, the authenticated wallet address IS the user's
+          // wallet. Surface it immediately so we don't show the "Create
+          // wallet" prompt while waiting for wagmi auto-reconnect.
+          if (meJson.method === "wallet" && meJson.walletAddress) {
+            setDbWalletAddress(meJson.walletAddress as Address);
+            setDbWalletSource("siwe");
+            setDbWalletLoaded(true);
+          }
           setSessionChecked(true);
           setHasSession(true);
           return;
@@ -709,7 +717,7 @@ export default function DashboardPage() {
             <p className="mt-1 text-sm text-[color:var(--muted-foreground)]">
               Create a PIN-protected wallet to start streaming.
             </p>
-            {dbWalletLoaded && !dbWalletAddress && (
+            {dbWalletLoaded && !dbWalletAddress && authMethod !== "wallet" && (
               <Button className="mt-5" onClick={() => setShowWalletModal(true)}>
                 Create wallet
               </Button>
