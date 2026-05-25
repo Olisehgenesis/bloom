@@ -94,8 +94,36 @@ export const CELO_TOKENS = [
 // All tokens including G$ — G$ deposit uses depositGD() (no swap needed)
 export const DEPOSIT_TOKENS = CELO_TOKENS;
 
+/**
+ * Some non-conformant injected wallets (Phantom in non-EVM mode, certain HW
+ * bridges, old extensions) expose a `window.ethereum` missing `addListener`/
+ * `removeListener`, which crashes wagmi's injected connector with
+ * "addListener is not a function". Shim the missing methods to safe no-ops
+ * so the connector can subscribe without throwing. This is idempotent.
+ */
+function shimInjectedProviderEvents() {
+  if (typeof window === "undefined") return;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const eth = (window as any).ethereum;
+  if (!eth || typeof eth !== "object") return;
+  const ensure = (name: string, fallback: (...a: unknown[]) => unknown) => {
+    if (typeof eth[name] !== "function") {
+      try { eth[name] = fallback; } catch { /* read-only — give up silently */ }
+    }
+  };
+  // No-op listeners are safe: if the provider can't emit events, account/chain
+  // changes simply won't fire (user will need to reload), which is far better
+  // than crashing on connect.
+  ensure("addListener",    () => eth);
+  ensure("removeListener", () => eth);
+  ensure("on",             () => eth);
+  ensure("off",            () => eth);
+  ensure("once",           () => eth);
+  ensure("emit",           () => false);
+}
 
 export const getWagmiConfig = () => {
+  shimInjectedProviderEvents();
   const chains = [celoChain] as const;
   const wcProjectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? "";
   const connectors = [
@@ -137,7 +165,9 @@ export const getWagmiConfig = () => {
       transports: { [celoChain.id]: transport },
       storage,
       ssr: true,
-      multiInjectedProviderDiscovery: false,
+      // Enable EIP-6963 so compliant wallets announce themselves and we don't
+      // get stuck with whatever last-write-wins on window.ethereum.
+      multiInjectedProviderDiscovery: true,
     });
   } catch (error) {
     console.error("Wagmi config creation failed:", error);
