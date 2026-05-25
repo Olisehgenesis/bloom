@@ -1,7 +1,7 @@
-import { useReadContract, useWriteContract, usePublicClient } from "wagmi";
+import { useReadContract, useWriteContract, usePublicClient, useAccount } from "wagmi";
 import { useState } from "react";
 import type { Address } from "viem";
-import { BLOOM_PROXY, GOOD_DOLLAR } from "./web3";
+import { BLOOM_PROXY, GOOD_DOLLAR, USDC_FEE_ADAPTER, feeCurrencyForToken } from "./web3";
 import { BLOOM_ABI } from "./bloomAbi";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -28,6 +28,15 @@ export const KNOWN_ROUTES = {
     intermediate:  "0x0000000000000000000000000000000000000000" as `0x${string}`,
     intermediate2: "0x0000000000000000000000000000000000000000" as `0x${string}`,
   },
+  /** USDC → cUSD (fee=100) → G$ (fee=10000) */
+  USDC: {
+    multiHop:      true  as const,
+    fee1:          100   as const,   // USDC/cUSD  0x34757893… liq~4.2e20
+    fee2:          10000 as const,   // cUSD/G$    0x9491d57c… liq~1.3Q
+    fee3:          0     as const,
+    intermediate:  "0x765DE816845861e75A25fCA122bb6898B8B1282a" as `0x${string}`,
+    intermediate2: "0x0000000000000000000000000000000000000000" as `0x${string}`,
+  },
 } as const;
 
 export type BloomRoute = {
@@ -38,6 +47,47 @@ export type BloomRoute = {
   intermediate: Address;
   intermediate2: Address;
 };
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000" as Address;
+
+/**
+ * Convert a live `useGDQuote()` result into the `BloomRoute` tuple expected by
+ * `registerRoute()`. Picks whatever fee tier the quote hook discovered (which
+ * probes small→big and uses the first liquid pool), so callers don't need to
+ * know which fee tier currently has liquidity.
+ *
+ * Returns null while the quote is loading, errored, or has no route.
+ */
+export function quoteToBloomRoute(q: {
+  loading: boolean;
+  error: boolean;
+  routeType: "direct" | "multihop" | null;
+  fee1?: number;
+  fee2?: number;
+  intermediate?: Address;
+}): BloomRoute | null {
+  if (q.loading || q.error || !q.routeType || !q.fee1) return null;
+  if (q.routeType === "direct") {
+    return {
+      multiHop:      false,
+      fee1:          q.fee1,
+      fee2:          0,
+      fee3:          0,
+      intermediate:  ZERO_ADDR,
+      intermediate2: ZERO_ADDR,
+    };
+  }
+  // multihop
+  if (!q.fee2 || !q.intermediate) return null;
+  return {
+    multiHop:      true,
+    fee1:          q.fee1,
+    fee2:          q.fee2,
+    fee3:          0,
+    intermediate:  q.intermediate,
+    intermediate2: ZERO_ADDR,
+  };
+}
 
 export const ERC20_ABI = [
   {
@@ -298,18 +348,10 @@ export function useCyclesTo(
   };
 }
 
-/** Check if a recipient address already has an active stream from another user. */
-export function useRecipientCheck(recipient: Address | undefined) {
-  const { data, isLoading } = useReadContract({
-    address: BLOOM_PROXY as Address,
-    abi:     BLOOM_ABI,
-    functionName: "recipientToUser",
-    args:    [recipient!],
-    query:   { enabled: !!recipient },
-  });
-  const existingUser = data as Address | undefined;
-  const isTaken = !!existingUser && existingUser !== "0x0000000000000000000000000000000000000000";
-  return { isTaken, existingUser, loading: isLoading };
+/** V3: many users can share a recipient. Kept as a no-op stub for backward
+ *  compatibility with any caller that still imports it. */
+export function useRecipientCheck(_recipient: Address | undefined) {
+  return { isTaken: false, existingUser: undefined as Address | undefined, loading: false };
 }
 
 /** ERC-20 allowance that the user has granted to BLOOM_PROXY. */
@@ -339,7 +381,63 @@ export function useBloomWrite() {
   const [step,  setStep ] = useState<BloomTxStep>("idle");
   const [error, setError] = useState<string | null>(null);
   const publicClient         = usePublicClient();
-  const { writeContractAsync } = useWriteContract();
+  const { writeContractAsync: _writeContractAsync } = useWriteContract();
+  // Widen the param type so Celo's CIP-64 `feeCurrency` field (and `gas`)
+  // are accepted at call sites without per-call casts.
+  const writeContractAsync = _writeContractAsync as unknown as (
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    args: any,
+  ) => Promise<`0x${string}`>;
+  const { address: userAddress } = useAccount();
+
+  /** Validate the wallet can start a fresh stream to `recipient` over `durationSec`. */
+  async function _preflightStartStream(
+    label:       string,
+    recipient:   Address,
+    durationSec: number,
+  ) {
+    if (!userAddress || !publicClient) return;
+
+    // 1. Zero-address sanity (self-recipient is allowed in V3)
+    if (/^0x0+$/i.test(recipient)) {
+      throw new Error(`Cannot ${label}: recipient address is invalid.`);
+    }
+
+    // 2. Read everything we need in parallel.
+    //    V3: `recipientToUser` is no longer enforced (many users → one recipient),
+    //    so we skip the recipient-collision check here.
+    type RawStatus = readonly [bigint, boolean, Address, bigint, bigint, bigint, bigint, bigint];
+    type MinGD     = readonly [bigint, bigint];
+    const [status, minGD] = await Promise.all([
+      publicClient.readContract({
+        address:      BLOOM_PROXY as Address,
+        abi:          BLOOM_ABI,
+        functionName: "accountStatus",
+        args:         [userAddress],
+      }) as Promise<RawStatus>,
+      publicClient.readContract({
+        address:      BLOOM_PROXY as Address,
+        abi:          BLOOM_ABI,
+        functionName: "minGdToStream",
+        args:         [BigInt(durationSec)],
+      }) as Promise<MinGD>,
+    ]);
+
+    const [gdBalance, streaming] = status;
+    const [minRawUnits]          = minGD;
+
+    if (streaming) {
+      throw new Error(`Cannot ${label}: you already have an active stream. Stop it first.`);
+    }
+    if (gdBalance === 0n) {
+      throw new Error(`Cannot ${label}: G$ balance is 0. Deposit first.`);
+    }
+    if (gdBalance < minRawUnits) {
+      throw new Error(
+        `Cannot ${label}: G$ balance too low for this duration. Need at least ${minRawUnits} raw units.`,
+      );
+    }
+  }
 
   function reset() { setStep("idle"); setError(null); }
 
@@ -351,17 +449,47 @@ export function useBloomWrite() {
   }
 
   function _catch(e: unknown) {
-    const msg      = e instanceof Error ? e.message : "";
-    const rejected = msg.toLowerCase().includes("user rejected") ||
-                     msg.toLowerCase().includes("denied");
-    setError(rejected ? "Transaction rejected." : "Transaction failed. Try again.");
+    const msg = e instanceof Error ? e.message : String(e ?? "");
+    const lower = msg.toLowerCase();
+    const rejected =
+      lower.includes("user rejected") ||
+      lower.includes("user denied") ||
+      lower.includes("denied") ||
+      lower.includes("rejected the request");
+
+    if (rejected) {
+      setError("Transaction rejected.");
+      setStep("error");
+      console.warn("[useBloom] tx rejected by user", e);
+      return;
+    }
+
+    // Try to extract a meaningful reason from viem's nested error objects.
+    // viem populates `shortMessage` / `details` / `cause.reason` for reverts.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err = e as any;
+    const reason: string =
+      err?.shortMessage ||
+      err?.cause?.shortMessage ||
+      err?.cause?.reason ||
+      err?.details ||
+      err?.cause?.details ||
+      msg ||
+      "Transaction failed.";
+
+    // Keep the surfaced message short; first line only.
+    const firstLine = reason.split("\n")[0].trim();
+    const trimmed = firstLine.length > 180 ? firstLine.slice(0, 177) + "\u2026" : firstLine;
+    setError(trimmed || "Transaction failed. Try again.");
     setStep("error");
+    console.error("[useBloom] tx failed", e);
   }
 
   /** Approve (if needed) → deposit (auto-routing or direct G$) → optionally startStream */
   async function depositAndStream(p: DepositAndStreamParams) {
     try {
       const isGD = p.tokenAddress.toLowerCase() === GOOD_DOLLAR.toLowerCase();
+      const feeCcy = feeCurrencyForToken(p.tokenAddress);
 
       if (p.currentAllowance < p.amountBig) {
         setStep("approving");
@@ -370,6 +498,8 @@ export function useBloomWrite() {
           abi:          ERC20_ABI,
           functionName: "approve",
           args:         [BLOOM_PROXY as Address, p.amountBig],
+          gas:          200_000n,
+          feeCurrency:  feeCcy,
         }));
       }
 
@@ -381,6 +511,8 @@ export function useBloomWrite() {
           abi:          BLOOM_ABI,
           functionName: "depositGD",
           args:         [p.amountBig],
+          gas:          300_000n,
+          feeCurrency:  feeCcy,
         }));
       } else {
         await _wait(await writeContractAsync({
@@ -393,17 +525,22 @@ export function useBloomWrite() {
             BigInt(p.splitBps ?? 10000),
             p.minGDOut,
           ],
+          gas:          700_000n,
+          feeCurrency:  feeCcy,
         }));
       }
 
       if (p.depositOnly) { setStep("done"); return; }
 
+      await _preflightStartStream("start stream", p.recipient, p.durationSec);
       setStep("streaming");
       await _wait(await writeContractAsync({
         address:      BLOOM_PROXY as Address,
         abi:          BLOOM_ABI,
         functionName: "startStream",
         args:         [p.recipient, BigInt(p.durationSec)],
+        gas:          900_000n,
+        feeCurrency:  feeCcy,
       }));
 
       setStep("done");
@@ -413,12 +550,15 @@ export function useBloomWrite() {
   /** Stream from existing G$ balance — no deposit needed. */
   async function startStreamOnly(recipient: Address, durationSec: number) {
     try {
+      await _preflightStartStream("start stream", recipient, durationSec);
       setStep("streaming");
       await _wait(await writeContractAsync({
         address:      BLOOM_PROXY as Address,
         abi:          BLOOM_ABI,
         functionName: "startStream",
         args:         [recipient, BigInt(durationSec)],
+        gas:          900_000n,
+        feeCurrency:  USDC_FEE_ADAPTER as Address,
       }));
       setStep("done");
     } catch (e) { _catch(e); }
@@ -433,6 +573,8 @@ export function useBloomWrite() {
         abi:          BLOOM_ABI,
         functionName: "stopStream",
         args:         [],
+        gas:          700_000n,
+        feeCurrency:  USDC_FEE_ADAPTER as Address,
       }));
       setStep("done");
     } catch (e) { _catch(e); }
@@ -447,6 +589,8 @@ export function useBloomWrite() {
         abi:          BLOOM_ABI,
         functionName: "restream",
         args:         [p.newRecipient, BigInt(p.durationSec), p.newFlowRate ?? 0n],
+        gas:          1_000_000n,
+        feeCurrency:  USDC_FEE_ADAPTER as Address,
       }));
       setStep("done");
     } catch (e) { _catch(e); }
@@ -461,6 +605,8 @@ export function useBloomWrite() {
         abi:          BLOOM_ABI,
         functionName: "withdraw",
         args:         [amountWei],
+        gas:          300_000n,
+        feeCurrency:  USDC_FEE_ADAPTER as Address,
       }));
       setStep("done");
     } catch (e) { _catch(e); }
@@ -478,6 +624,7 @@ export function useBloomWrite() {
   }) {
     try {
       const isGD = p.tokenAddress.toLowerCase() === GOOD_DOLLAR.toLowerCase();
+      const feeCcy = feeCurrencyForToken(p.tokenAddress);
 
       if (p.currentAllowance < p.amountBig) {
         setStep("approving");
@@ -486,6 +633,8 @@ export function useBloomWrite() {
           abi:          ERC20_ABI,
           functionName: "approve",
           args:         [BLOOM_PROXY as Address, p.amountBig],
+          gas:          250_000n,
+          feeCurrency:  feeCcy,
         }));
       }
 
@@ -496,6 +645,8 @@ export function useBloomWrite() {
           abi:          BLOOM_ABI,
           functionName: "depositGD",
           args:         [p.amountBig],
+          gas:          400_000n,
+          feeCurrency:  feeCcy,
         }));
       } else {
         await _wait(await writeContractAsync({
@@ -503,6 +654,8 @@ export function useBloomWrite() {
           abi:          BLOOM_ABI,
           functionName: "deposit",
           args:         [p.tokenAddress, p.amountBig, BigInt(p.splitBps ?? 10000), p.minGDOut],
+          gas:          1_500_000n,
+          feeCurrency:  feeCcy,
         }));
       }
 
@@ -535,6 +688,8 @@ export function useBloomWrite() {
         abi:          BLOOM_ABI,
         functionName: "increaseStream",
         args:         [recipient, newRate],
+        gas:          900_000n,
+        feeCurrency:  feeCurrencyForToken(p.tokenAddress),
       }));
 
       setStep("done");

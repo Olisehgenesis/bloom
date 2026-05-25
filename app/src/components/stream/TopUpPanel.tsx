@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, ChevronDown, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -49,27 +50,48 @@ export function TopUpPanel({
   onSubmit,
   onToggle,
 }: TopUpPanelProps) {
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // When the panel opens, scroll it into view so the expanded form is not
+  // clipped behind the bottom nav / page fold on mobile.
+  useEffect(() => {
+    if (!open) return;
+    const el = rootRef.current;
+    if (!el) return;
+    const t = setTimeout(() => {
+      try {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch {
+        el.scrollIntoView();
+      }
+    }, 220); // wait for height animation to settle
+    return () => clearTimeout(t);
+  }, [open]);
+
   return (
-    <div className="bg-white rounded-3xl border border-[#DDE3DC] shadow-sm overflow-hidden">
+    <div
+      ref={rootRef}
+      className="bg-card rounded-3xl border border-[color:var(--border)] shadow-sm scroll-mt-20 mb-24"
+    >
       <button
         type="button"
         onClick={onToggle}
         className="w-full flex items-center justify-between p-4"
       >
         <div className="flex items-center gap-3">
-          <span className="w-2 h-2 rounded-full bg-[#1FA36A] animate-pulse" />
+          <span className="w-2 h-2 rounded-full bg-[color:var(--primary)] animate-pulse" />
           <div>
-            <div className="text-sm font-semibold text-[#111510]">Stream active</div>
-            <div className="text-xs text-[#6B7A6E]">Top up your existing stream</div>
+            <div className="text-sm font-semibold text-foreground">Stream active</div>
+            <div className="text-xs text-[color:var(--muted-foreground)]">Top up your existing stream</div>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <span className={`text-xs font-semibold px-3 py-1.5 rounded-xl border ${
-            open ? "bg-[#F7F6F1] text-[#6B7A6E] border-[#DDE3DC]" : "bg-[#1FA36A] text-white border-[#1FA36A]"
+            open ? "bg-muted text-[color:var(--muted-foreground)] border-[color:var(--border)]" : "bg-[color:var(--primary)] text-white border-[color:var(--primary)]"
           }`}>
             {open ? "Close" : "+ Top Up"}
           </span>
-          <ChevronDown size={14} className={`text-[#6B7A6E] transition-transform ${open ? "rotate-180" : ""}`} />
+          <ChevronDown size={14} className={`text-[color:var(--muted-foreground)] transition-transform ${open ? "rotate-180" : ""}`} />
         </div>
       </button>
 
@@ -80,38 +102,46 @@ export function TopUpPanel({
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="border-t border-[#F0F4F0] px-4 pb-4 pt-4"
+            style={{ overflow: "visible" }}
+            className="border-t border-[color:var(--border)] px-4 pb-6 pt-5"
           >
-            <div className="space-y-4">
+            <div className="space-y-5">
               <div>
-                <label className="text-[11px] font-semibold uppercase tracking-widest text-[#6B7A6E] mb-2 block">
+                <label className="text-[11px] font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)] mb-2 block">
                   Add Token
                 </label>
                 <div className="relative">
                   <button
                     type="button"
                     onClick={() => setDropdownOpen(!dropdownOpen)}
-                    className="w-full flex items-center justify-between rounded-2xl border border-[#DDE3DC] bg-[#F7F6F1] px-4 py-3 text-sm font-medium text-[#111510]"
+                    className="w-full flex items-center justify-between rounded-2xl border border-[color:var(--border)] bg-muted px-4 py-3 text-sm font-medium text-foreground"
                   >
                     <span>{token.symbol}</span>
                     <ChevronDown size={14} className={dropdownOpen ? "rotate-180" : ""} />
                   </button>
-                  {dropdownOpen && (
-                    <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-3xl border border-[#DDE3DC] bg-white shadow-lg">
-                      {tokens.map((t) => (
-                        <TokenDropdownRow
-                          key={t.symbol}
-                          token={t}
-                          selected={t.symbol === token.symbol}
-                          walletAddress={address}
-                          onSelect={() => {
-                            onSelectToken(t);
-                            setDropdownOpen(false);
-                          }}
-                        />
-                      ))}
-                    </div>
-                  )}
+                  <AnimatePresence>
+                    {dropdownOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6 }}
+                        className="absolute left-0 right-0 top-full z-30 mt-1 max-h-[60vh] overflow-y-auto overflow-x-hidden overscroll-contain rounded-3xl border border-[color:var(--border)] bg-card shadow-xl"
+                      >
+                        {tokens.map((t) => (
+                          <TokenDropdownRow
+                            key={t.symbol}
+                            token={t}
+                            selected={t.symbol === token.symbol}
+                            walletAddress={address}
+                            onSelect={() => {
+                              onSelectToken(t);
+                              setDropdownOpen(false);
+                            }}
+                          />
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
                 {address && (
                   <TokenBalance
@@ -133,18 +163,18 @@ export function TopUpPanel({
                     placeholder="0.00"
                     className="pr-16"
                   />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-[#6B7A6E]">
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-[color:var(--muted-foreground)]">
                     {token.symbol}
                   </span>
                 </div>
               </div>
 
               {gdTotal > 0 && !quoteError && (
-                <div className="flex items-center justify-between text-xs text-[#6B7A6E]">
+                <div className="flex items-center justify-between text-xs text-[color:var(--muted-foreground)]">
                   <span>You add ≈</span>
-                  <span className="font-semibold text-[#1FA36A]">
+                  <span className="font-semibold text-[color:var(--primary)]">
                     {Math.round(gdTotal).toLocaleString()} G$
-                    {isGD && <span className="text-[#6B7A6E] font-normal ml-1">(direct)</span>}
+                    {isGD && <span className="text-[color:var(--muted-foreground)] font-normal ml-1">(direct)</span>}
                   </span>
                 </div>
               )}
@@ -166,10 +196,10 @@ export function TopUpPanel({
               )}
 
               {gdTotal > 0 && newRatePerSec > 0 && (
-                <div className="rounded-3xl bg-[#F7F6F1] p-3 text-[11px] text-[#6B7A6E]">
+                <div className="rounded-3xl bg-muted p-3 text-[11px] text-[color:var(--muted-foreground)]">
                   <div className="flex items-center justify-between gap-3">
                     <span>New stream rate</span>
-                    <span className="font-semibold text-[#1FA36A]">{newRatePerSec.toFixed(4)} G$/s</span>
+                    <span className="font-semibold text-[color:var(--primary)]">{newRatePerSec.toFixed(4)} G$/s</span>
                   </div>
                 </div>
               )}
