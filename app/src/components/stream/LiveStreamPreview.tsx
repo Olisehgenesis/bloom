@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
 import { Droplets, GitBranch, AlertCircle } from "lucide-react";
 import { fmtGPS } from "@/lib/useBloom";
+import { useCurrency } from "@/lib/useCurrency";
 
 export type RouteType = "registered" | "direct" | "multihop" | null;
 
@@ -32,13 +33,19 @@ export function LiveStreamPreview({
   const [simSec, setSimSec] = useState(0);
   const hasData = gdPerSecond > 0;
   const belowMin = gdTotal > 0 && minWholeGD > 0 && gdTotal < minWholeGD;
+  const { selectedCurrency, convertFromUsd, convertGdToLocal, formatAmount, isLoading: currencyLoading } = useCurrency();
 
   useEffect(() => {
     setSimSec(0);
     if (!hasData) return;
-    const id = window.setInterval(() => setSimSec((current) => current + 0.05), 50);
+
+    const start = Date.now();
+    const id = window.setInterval(() => {
+      setSimSec((Date.now() - start) / 1000);
+    }, 100);
+
     return () => window.clearInterval(id);
-  }, [hasData]);
+  }, [hasData, gdPerSecond]);
 
   const simGD = simSec * gdPerSecond;
 
@@ -46,7 +53,7 @@ export function LiveStreamPreview({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-gradient-to-br from-[#1A8C5A] to-[#2DBF7E] rounded-3xl p-4 text-white shadow-lg shadow-[#1FA36A]/20"
+      className="bg-gradient-to-br from-[color:var(--brand-600)] to-[color:var(--brand-400)] rounded-[var(--radius-2xl)] p-4 text-white shadow-lg shadow-[color:var(--brand-500)]/25"
     >
       <div className="flex items-center justify-between mb-3 gap-3">
         <div className="min-w-0">
@@ -77,14 +84,26 @@ export function LiveStreamPreview({
           <div className="text-xs opacity-70 mt-1.5 mb-3">
             ≈ {Math.round(gdPerDay).toLocaleString()} G$/day · {Math.round(gdTotal).toLocaleString()} G$ total · {duration.label}
           </div>
+          <div className="text-[11px] opacity-70 mb-3">
+            {currencyLoading
+              ? "Loading local currency conversions…"
+              : `≈ ${formatAmount(convertGdToLocal(gdPerDay), selectedCurrency)} /day in ${selectedCurrency}`}
+          </div>
           <div className="bg-black/15 rounded-3xl p-3">
             <div className="flex items-center gap-2 text-[10px] opacity-70 mb-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#A8E063] animate-pulse" /> Live simulation
+              <span className="w-1.5 h-1.5 rounded-full bg-[color:var(--accent-pink)] animate-pulse" /> Live simulation
             </div>
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 font-mono text-sm font-semibold">
-                <Droplets size={14} className="opacity-80" />
-                +{simGD < 1 ? simGD.toFixed(6) : simGD.toFixed(4)} G$
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-2 font-mono text-sm font-semibold">
+                  <Droplets size={14} className="opacity-80" />
+                  +{simGD < 1 ? simGD.toFixed(6) : simGD.toFixed(4)} G$
+                </div>
+                {!currencyLoading && simGD > 0 && (
+                  <div className="text-[10px] opacity-70 font-mono">
+                    +{formatAmount(convertGdToLocal(simGD), selectedCurrency)}
+                  </div>
+                )}
               </div>
               <span className="text-[10px] opacity-60 font-mono">0.0s elapsed</span>
             </div>

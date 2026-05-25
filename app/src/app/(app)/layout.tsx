@@ -1,11 +1,6 @@
 "use client";
-import { BottomNav, WalletButton } from "@/components/Nav";
+import { AppShell } from "@/components/AppShell";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col min-h-screen max-w-[430px] mx-auto relative">
-      {children}
-      <BottomNav />
-    </div>
-  );
+  return <AppShell>{children}</AppShell>;
 }

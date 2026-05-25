@@ -35,7 +35,7 @@ export async function saveWalletRecord(
       console.warn("Failed to get supabase user while saving wallet record:", userError.message);
     }
 
-    finalUserId = user?.id ?? null;
+    finalUserId = user?.id ?? undefined;
   }
 
   const walletRecord = {
@@ -58,7 +58,7 @@ export async function getWalletRecord(userId?: string) {
   const finalUserId = userId ?? (await supabase.auth.getUser()).data.user?.id;
 
   if (!finalUserId) {
-    return { data: null, error: { message: "No authenticated user found.", details: null, hint: null, code: null } as PostgrestError };
+    return { data: null, error: { message: "No authenticated user found.", details: "", hint: "", code: "" } as unknown as PostgrestError };
   }
 
   const { data, error } = await supabase
@@ -78,12 +78,12 @@ export async function reencryptWalletPin(oldPin: string, newPin: string, userId?
     return { error };
   }
   if (!data?.encrypted_private_key) {
-    return { error: { message: "No encrypted wallet found for this user.", details: null, hint: null, code: null } as PostgrestError };
+    return { error: { message: "No encrypted wallet found for this user.", details: "", hint: "", code: "" } as unknown as PostgrestError };
   }
 
   const privateKey = decryptPrivateKey(data.encrypted_private_key, oldPin);
   if (!privateKey) {
-    return { error: { message: "Old PIN is incorrect.", details: null, hint: null, code: null } as PostgrestError };
+    return { error: { message: "Old PIN is incorrect.", details: "", hint: "", code: "" } as unknown as PostgrestError };
   }
 
   const newEncryptedKey = encryptPrivateKey(privateKey, newPin);

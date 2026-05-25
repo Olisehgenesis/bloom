@@ -2,13 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/server";
-import { prisma } from "@/lib/prisma";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+// Server-only admin client — bypasses RLS. Only used AFTER we've verified
+// the caller's identity from a valid JWT (cookie or Bearer), and we always
+// scope reads/writes by the verified user.id.
+function adminClient() {
+  if (!supabaseServiceRoleKey) {
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured on the server.");
+  }
+  return createSupabaseClient(supabaseUrl, supabaseServiceRoleKey, {
+    auth: { persistSession: false, detectSessionInUrl: false, autoRefreshToken: false },
+  });
+}
 
 async function getUserFromRequest(request: NextRequest) {
-  const supabase = createClient({ cookieStore: cookies() });
+  const cookieStore = await cookies();
+  const supabase = createClient({ cookieStore });
   const { data: { user }, error: userError } = await supabase.auth.getUser();
 
   if (user) {
@@ -35,15 +48,29 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: userError?.message ?? "No authenticated user." }, { status: 401 });
   }
 
-  if (!user) {
-    return NextResponse.json({ error: "No authenticated user." }, { status: 401 });
+  const db = adminClient();
+  const { data: wallet, error } = await db
+    .from("wallets")
+    .select("id, user_id, address, encrypted_private_key, source, created_at")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const wallet = await prisma.wallet.findFirst({
-    where: { userId: user.id },
-  });
+  const normalized = wallet
+    ? {
+        id: wallet.id,
+        userId: wallet.user_id,
+        address: wallet.address,
+        encryptedPrivateKey: wallet.encrypted_private_key,
+        source: wallet.source,
+        createdAt: wallet.created_at,
+      }
+    : null;
 
-  return NextResponse.json({ wallet: wallet ?? null });
+  return NextResponse.json({ wallet: normalized });
 }
 
 export async function POST(request: NextRequest) {
@@ -60,20 +87,33 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Missing wallet address or source." }, { status: 400 });
   }
 
-  const wallet = await prisma.wallet.upsert({
-    where: { address },
-    update: {
-      userId: user.id,
-      encryptedPrivateKey: encryptedPrivateKey ?? null,
-      source,
-    },
-    create: {
-      userId: user.id,
-      address,
-      encryptedPrivateKey: encryptedPrivateKey ?? null,
-      source,
-    },
-  });
+  const db = adminClient();
+  const { data: wallet, error } = await db
+    .from("wallets")
+    .upsert(
+      {
+        user_id: user.id,
+        address,
+        encrypted_private_key: encryptedPrivateKey ?? null,
+        source,
+      },
+      { onConflict: "address" },
+    )
+    .select("id, user_id, address, encrypted_private_key, source, created_at")
+    .single();
 
-  return NextResponse.json({ wallet });
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  const normalized = {
+    id: wallet.id,
+    userId: wallet.user_id,
+    address: wallet.address,
+    encryptedPrivateKey: wallet.encrypted_private_key,
+    source: wallet.source,
+    createdAt: wallet.created_at,
+  };
+
+  return NextResponse.json({ wallet: normalized });
 }

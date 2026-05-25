@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { TokenBalance, TokenDropdownRow, SlippagePicker } from "@/components/stream/TokenWidgets";
+import { WalletButton } from "@/components/Nav";
+import Link from "next/link";
+import { useCurrency } from "@/lib/useCurrency";
 import type { Address } from "viem";
 import type { RouteType } from "@/components/stream/LiveStreamPreview";
 
@@ -57,7 +60,7 @@ interface StreamFormProps {
   canSubmit: boolean;
   hasActiveStream: boolean;
   handleStart: () => Promise<void>;
-  gasCelo: number | null;
+  ctaLabel: string;
   needsApproval: boolean;
 }
 
@@ -107,16 +110,18 @@ export function StreamForm({
   canSubmit,
   hasActiveStream,
   handleStart,
-  gasCelo,
+  ctaLabel,
   needsApproval,
 }: StreamFormProps) {
+  const { selectedCurrency, convertFromUsd, convertGdToLocal, formatAmount } = useCurrency();
+
   return (
     <>
       {!useExistingBalance && (
         <Card className="p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-widest text-[#6B7A6E]">Deposit Token</div>
+              <div className="text-xs font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)]">Deposit Token</div>
             </div>
             <Button
               size="sm"
@@ -134,7 +139,7 @@ export function StreamForm({
             <button
               type="button"
               onClick={() => setOpen(!open)}
-              className="w-full flex items-center justify-between rounded-3xl border border-[#DDE3DC] bg-[#F7F6F1] px-4 py-3 text-sm font-medium text-[#111510]"
+              className="w-full flex items-center justify-between rounded-3xl border border-[color:var(--border)] bg-muted px-4 py-3 text-sm font-medium text-foreground"
             >
               <span>{token.symbol}</span>
               <ChevronDown size={16} className={open ? "rotate-180" : ""} />
@@ -145,7 +150,7 @@ export function StreamForm({
                   initial={{ opacity: 0, y: -6 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -6 }}
-                  className="absolute left-0 right-0 z-20 mt-1 overflow-hidden rounded-3xl border border-[#DDE3DC] bg-white shadow-xl"
+                  className="absolute left-0 right-0 z-20 mt-1 overflow-hidden rounded-3xl border border-[color:var(--border)] bg-card shadow-xl"
                 >
                   {tokens.map((option) => (
                     <TokenDropdownRow
@@ -178,29 +183,34 @@ export function StreamForm({
                 placeholder="0.00"
                 className="pr-16 text-lg font-semibold"
               />
-              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-[#6B7A6E]">
+              <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm font-medium text-[color:var(--muted-foreground)]">
                 {token.symbol}
               </span>
             </div>
             <div className={`flex items-center justify-between mt-3 px-1 transition-opacity duration-200 ${amount && parseFloat(amount) > 0 ? "opacity-100" : "opacity-0 pointer-events-none"}`}>
-              <span className="text-[11px] text-[#6B7A6E]">You receive ≈</span>
+              <span className="text-[11px] text-[color:var(--muted-foreground)]">You receive ≈</span>
               <div className="flex items-center gap-1.5">
                 {quoteLoading ? (
-                  <span className="text-[11px] text-[#1FA36A]">Loading…</span>
+                  <span className="text-[11px] text-[color:var(--primary)]">Loading…</span>
                 ) : quoteError ? (
                   <span className="text-[11px] text-red-400">no route</span>
                 ) : (
-                  <span className="text-sm font-bold text-[#1FA36A] tabular-nums">
+                  <span className="text-sm font-bold text-[color:var(--primary)] tabular-nums">
                     {gdTotal > 0 ? `${gdTotal >= 1000 ? `${(gdTotal / 1000).toFixed(1)}k` : Math.round(gdTotal).toLocaleString()} G$` : "—"}
                   </span>
                 )}
                 {splitEnabled && gdTotal > 0 && !quoteError && (
-                  <span className="rounded-full bg-[#F7F6F1] px-2 py-1 text-[10px] text-[#6B7A6E] border border-[#DDE3DC]">
+                  <span className="rounded-full bg-muted px-2 py-1 text-[10px] text-[color:var(--muted-foreground)] border border-[color:var(--border)]">
                     {splitBps / 100}% swapped
                   </span>
                 )}
               </div>
             </div>
+            {!quoteLoading && !quoteError && gdTotal > 0 && (
+              <div className="mt-2 text-[11px] text-[color:var(--muted-foreground)]">
+                ≈ {formatAmount(convertGdToLocal(gdTotal), selectedCurrency)} in {selectedCurrency}
+              </div>
+            )}
 
             {insufficientBalance && (
               <div className="mt-3 rounded-3xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-600">
@@ -221,8 +231,8 @@ export function StreamForm({
                 </span>
               </Button>
               {splitEnabled && (
-                <div className="space-y-2 rounded-3xl bg-[#F7F6F1] p-3">
-                  <div className="flex items-center justify-between text-[11px] text-[#6B7A6E]">
+                <div className="space-y-2 rounded-3xl bg-muted p-3">
+                  <div className="flex items-center justify-between text-[11px] text-[color:var(--muted-foreground)]">
                     <span>Swap {splitBps / 100}% → G$</span>
                     <span>Keep {(100 - splitBps / 100).toFixed(0)}% as {token.symbol}</span>
                   </div>
@@ -233,7 +243,7 @@ export function StreamForm({
                     step="5"
                     value={splitBps / 100}
                     onChange={(event) => setSplitBps(Number(event.target.value) * 100)}
-                    className="w-full accent-[#1FA36A]"
+                    className="w-full accent-[color:var(--primary)]"
                   />
                 </div>
               )}
@@ -253,7 +263,7 @@ export function StreamForm({
       {!depositOnly && (
         <Card className="p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <div className="text-xs font-semibold uppercase tracking-widest text-[#6B7A6E]">Stream Duration</div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)]">Stream Duration</div>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -291,7 +301,7 @@ export function StreamForm({
               <select
                 value={customDurUnit}
                 onChange={(event) => setCustomDurUnit(event.target.value as "hours" | "days" | "weeks")}
-                className="rounded-2xl border border-[#DDE3DC] bg-[#F7F6F1] px-3 py-2 text-sm"
+                className="rounded-2xl border border-[color:var(--border)] bg-muted px-3 py-2 text-sm"
               >
                 <option value="hours">Hours</option>
                 <option value="days">Days</option>
@@ -301,8 +311,8 @@ export function StreamForm({
           )}
 
           {gdTotal > 0 && !belowMin && (
-            <p className="mt-3 text-[11px] text-[#6B7A6E]">
-              ~{Math.floor(gdTotal).toLocaleString()} G$ over {duration.label} at <span className="font-semibold text-[#1FA36A]">{`${gdTotal > 0 ? Math.max(gdTotal, 0).toFixed(4) : "0.0000"}`}</span>
+            <p className="mt-3 text-[11px] text-[color:var(--muted-foreground)]">
+              ~{Math.floor(gdTotal).toLocaleString()} G$ over {duration.label} at <span className="font-semibold text-[color:var(--primary)]">{`${gdTotal > 0 ? Math.max(gdTotal, 0).toFixed(4) : "0.0000"}`}</span>
             </p>
           )}
         </Card>
@@ -311,7 +321,7 @@ export function StreamForm({
       {!depositOnly && (
         <Card className="p-4 shadow-sm">
           <div className="flex items-center justify-between mb-3">
-            <div className="text-xs font-semibold uppercase tracking-widest text-[#6B7A6E]">Recipient</div>
+            <div className="text-xs font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)]">Recipient</div>
           </div>
           <div className="flex gap-2 mb-3">
             <Button
@@ -334,11 +344,11 @@ export function StreamForm({
 
           {recipientMode === "my" ? (
             isConnected && address ? (
-              <div className="rounded-3xl border border-[#DDE3DC] bg-[#F7F6F1] px-4 py-3 font-mono text-xs text-[#111510] break-all">
+              <div className="rounded-3xl border border-[color:var(--border)] bg-muted px-4 py-3 font-mono text-xs text-foreground break-all">
                 {address}
               </div>
             ) : (
-              <p className="text-xs text-[#6B7A6E]">Connect your wallet first.</p>
+              <p className="text-xs text-[color:var(--muted-foreground)]">Connect your wallet first.</p>
             )
           ) : (
             <div className="space-y-2">
@@ -346,7 +356,7 @@ export function StreamForm({
                 value={customAddr}
                 onChange={(event) => setCustomAddr(event.target.value)}
                 placeholder="0x… destination address"
-                className={customAddr && !customAddr.startsWith("0x") ? "border-red-300 focus:border-red-400" : "border-[#DDE3DC] focus:border-[#1FA36A]"}
+                className={customAddr && !customAddr.startsWith("0x") ? "border-red-300 focus:border-red-400" : "border-[color:var(--border)] focus:border-[color:var(--primary)]"}
               />
               {customAddr && !customAddr.startsWith("0x") && (
                 <div className="flex items-center gap-2 rounded-3xl border border-red-200 bg-red-50 px-3 py-2 text-[11px] text-red-600">
@@ -358,21 +368,29 @@ export function StreamForm({
         </Card>
       )}
 
-      <Button
-        size="lg"
-        variant={canSubmit ? "primary" : "secondary"}
-        onClick={handleStart}
-        disabled={!canSubmit || hasActiveStream}
-        className="mt-2 w-full"
-      >
-        <Zap size={16} /> {canSubmit ? "Start stream" : "Complete form"}
-      </Button>
-
-      {gasCelo !== null && (
-        <p className="mt-2 text-center text-[11px] text-[#6B7A6E]">
-          Estimated gas: ~{gasCelo < 0.0001 ? "<0.0001" : gasCelo.toFixed(4)} CELO
-          {needsApproval && !useExistingBalance && " (incl. approval)"}
-        </p>
+      {!isConnected ? (
+        <div className="mt-2 w-full flex flex-col items-stretch gap-2">
+          <WalletButton />
+          <Link
+            href="/login"
+            className="text-center text-[12px] font-medium text-[color:var(--primary)] underline-offset-2 hover:underline"
+          >
+            Or sign in with PIN (Bloom Wallet)
+          </Link>
+          <p className="text-center text-[11px] text-[color:var(--muted-foreground)]">
+            Connect a wallet to fund and start your stream.
+          </p>
+        </div>
+      ) : (
+        <Button
+          size="lg"
+          variant={canSubmit ? "primary" : "secondary"}
+          onClick={handleStart}
+          disabled={!canSubmit || hasActiveStream}
+          className="mt-2 w-full"
+        >
+          <Zap size={16} /> {ctaLabel}
+        </Button>
       )}
     </>
   );

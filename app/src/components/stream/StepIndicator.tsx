@@ -28,7 +28,7 @@ export function StepIndicator({ step, depositOnly, topup }: StepIndicatorProps) 
 
   return (
     <Card className="rounded-3xl p-4">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-[#6B7A6E] mb-3">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)] mb-3">
         {allDone ? "All done" : step === "error" ? "Failed" : "In progress"}
       </p>
       <div className="flex items-center gap-2">
@@ -41,20 +41,20 @@ export function StepIndicator({ step, depositOnly, topup }: StepIndicatorProps) 
                 <div
                   className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors ${
                     done
-                      ? "bg-[#1FA36A] text-white"
+                      ? "bg-[color:var(--primary)] text-white"
                       : active
-                      ? "bg-[#1FA36A]/10 border border-[#1FA36A] text-[#1FA36A]"
-                      : "bg-[#F0F4F0] text-[#6B7A6E]"
+                      ? "bg-[color:var(--brand-soft)] border border-[color:var(--primary)] text-[color:var(--primary)]"
+                      : "bg-[color:var(--muted)] text-[color:var(--muted-foreground)]"
                   }`}
                 >
                   {done ? <CheckCircle2 size={14} /> : active ? <Loader2 size={12} className="animate-spin" /> : index + 1}
                 </div>
-                <span className={`text-[10px] font-medium ${done || active ? "text-[#111510]" : "text-[#6B7A6E]"}`}>
+                <span className={`text-[10px] font-medium ${done || active ? "text-foreground" : "text-[color:var(--muted-foreground)]"}`}>
                   {item.label}
                 </span>
               </div>
               {index < steps.length - 1 && (
-                <div className={`flex-1 h-px mx-2 ${done ? "bg-[#1FA36A]" : "bg-[#DDE3DC]"}`} />
+                <div className={`flex-1 h-px mx-2 ${done ? "bg-[color:var(--primary)]" : "bg-[color:var(--border)]"}`} />
               )}
             </div>
           );

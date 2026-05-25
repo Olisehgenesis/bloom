@@ -11,6 +11,20 @@ const CELO_ADDRESS = CELO_TOKENS.find(t => t.symbol === "CELO")!.address as `0x$
 const CUSD_ADDRESS = CELO_TOKENS.find(t => t.symbol === "cUSD")!.address as `0x${string}`;
 const ZERO_ADDR    = "0x0000000000000000000000000000000000000000" as `0x${string}`;
 
+// G$ and intermediates are all 18 decimals on Celo; USDC is 6.
+const CUSD_DECIMALS = 18;
+const GD_DECIMALS   = 18;
+
+function decimalsOf(addr: string): number {
+  const t = CELO_TOKENS.find(t => t.address.toLowerCase() === addr.toLowerCase());
+  return t?.decimals ?? 18;
+}
+
+/** Returns [decimals_token0, decimals_token1] for a V3 pool of tokens A and B. */
+function pairDecimals(addrA: string, decA: number, addrB: string, decB: number): [number, number] {
+  return addrA.toLowerCase() < addrB.toLowerCase() ? [decA, decB] : [decB, decA];
+}
+
 // ─── Fee tiers to probe ────────────────────────────────────────────────────────
 
 /// Uniswap V3 fee tiers in ascending order (100 = 0.01% stable, 500 = 0.05%, 3000 = 0.3%, 10000 = 1%)
@@ -63,18 +77,35 @@ const POOL_LIQUIDITY_ABI = [
 // ─── Math ─────────────────────────────────────────────────────────────────────
 
 const Q192  = 2n ** 192n;
-const SCALE = 10n ** 12n;
+const SCALE = 10n ** 18n;
 
 /**
- * V3 pool price: sqrtPriceX96^2 / 2^192 = token1/token0.
- * gdIsToken1=true  → returns token1/token0 = GD/tokenIn
- * gdIsToken1=false → returns token0/token1 (inverted) = GD/tokenIn
+ * V3 pool price: sqrtPriceX96^2 / 2^192 = atomic_token1 / atomic_token0.
+ *
+ * Convert to a HUMAN price (whole_token_b per whole_token_a) accounting for
+ * the two tokens' decimal counts:
+ *
+ *   human_price(b/a) = raw * 10^(decimalsA - decimalsB)
+ *
+ * `outIsToken1=true`  → return human price token1 per token0 (= b=token1, a=token0)
+ * `outIsToken1=false` → return human price token0 per token1 (= b=token0, a=token1)
+ *
+ * Skipping the decimal correction caused a 10^12 error on USDC(6)/cUSD(18)
+ * pools and produced absurd 7.9e10 G$/s flow rates downstream.
  */
-function sqrtPriceToRatio(sqrtPriceX96: bigint, gdIsToken1: boolean): number {
-  const scaled = (sqrtPriceX96 * sqrtPriceX96 * SCALE) / Q192;
-  const ratio  = Number(scaled) / Number(SCALE);
-  if (ratio === 0) return 0;
-  return gdIsToken1 ? ratio : 1 / ratio;
+function sqrtPriceToRatio(
+  sqrtPriceX96: bigint,
+  decimals0:    number,
+  decimals1:    number,
+  outIsToken1:  boolean,
+): number {
+  // Raw atomic ratio = sqrtP^2 / 2^192, scaled by 1e18 to keep bigint precision.
+  const scaledRaw = (sqrtPriceX96 * sqrtPriceX96 * SCALE) / Q192;
+  const rawRatio  = Number(scaledRaw) / Number(SCALE); // atomic_token1 / atomic_token0
+  if (rawRatio === 0) return 0;
+  // Human price token1/token0 = raw * 10^(d0 - d1)
+  const humanT1PerT0 = rawRatio * Math.pow(10, decimals0 - decimals1);
+  return outIsToken1 ? humanT1PerT0 : 1 / humanT1PerT0;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -294,7 +325,9 @@ export function useGDQuote(tokenAddress: string): GDQuote {
   // ── Route 1: Direct pool (not CELO — its direct pools have dust liquidity) ──
   if (!isCELO && directAddr && directSlot0) {
     const gdIsToken1 = addr.toLowerCase() < (GOOD_DOLLAR as string).toLowerCase();
-    const gdPerToken = sqrtPriceToRatio(directSlot0[0], gdIsToken1);
+    const tokenDec   = decimalsOf(addr);
+    const [d0, d1]   = pairDecimals(addr, tokenDec, GOOD_DOLLAR as string, GD_DECIMALS);
+    const gdPerToken = sqrtPriceToRatio(directSlot0[0], d0, d1, gdIsToken1);
     const fee1 = FEE_TIERS[directIdx];
     console.debug("[useGDQuote] route: direct", { addr, fee1, gdPerToken });
     return { gdPerToken, loading: false, error: false, routeType: "direct", fee1 };
@@ -303,9 +336,12 @@ export function useGDQuote(tokenAddress: string): GDQuote {
   // ── Route 2: Multihop tokenIn → cUSD → G$ ───────────────────────────────
   if (probeMultihop && cusdGdAddr && cusdGdSlot0 && tokenCusdAddr && tokenCusdSlot0) {
     const cusdIsToken1     = addr.toLowerCase() < CUSD_ADDRESS.toLowerCase();
-    const cusdPerToken     = sqrtPriceToRatio(tokenCusdSlot0[0], cusdIsToken1);
+    const tokenDec         = decimalsOf(addr);
+    const [tcD0, tcD1]     = pairDecimals(addr, tokenDec, CUSD_ADDRESS, CUSD_DECIMALS);
+    const cusdPerToken     = sqrtPriceToRatio(tokenCusdSlot0[0], tcD0, tcD1, cusdIsToken1);
     const gdIsToken1InHop2 = CUSD_ADDRESS.toLowerCase() < (GOOD_DOLLAR as string).toLowerCase();
-    const gdPerCusd        = sqrtPriceToRatio(cusdGdSlot0[0], gdIsToken1InHop2);
+    const [cgD0, cgD1]     = pairDecimals(CUSD_ADDRESS, CUSD_DECIMALS, GOOD_DOLLAR as string, GD_DECIMALS);
+    const gdPerCusd        = sqrtPriceToRatio(cusdGdSlot0[0], cgD0, cgD1, gdIsToken1InHop2);
     const gdPerToken       = cusdPerToken * gdPerCusd;
     const fee1 = FEE_TIERS[tokenCusdIdx];
     const fee2 = FEE_TIERS[cusdGdIdx];
@@ -314,12 +350,22 @@ export function useGDQuote(tokenAddress: string): GDQuote {
   }
 
   // ── No route found ────────────────────────────────────────────────────────
-  console.error("[useGDQuote] no route found for", addr, {
-    directAddrs,
-    probeMultihop,
-    cusdGdAddrs,
-    tokenCusdAddrs,
-  });
+  // Spell out the state so it shows inline in the console (no expand needed).
+  console.warn(
+    "[useGDQuote] NO ROUTE", addr,
+    "\n  isCELO=", isCELO, "isCUSD=", isCUSD, "isGD=", isGD,
+    "\n  directFullyLoaded=", directFullyLoaded,
+    "\n  directAddrs=", JSON.stringify(directAddrs),
+    "\n  probeMultihop=", probeMultihop,
+    "\n  cusdGdAddrs=", JSON.stringify(cusdGdAddrs),
+    "\n  tokenCusdAddrs=", JSON.stringify(tokenCusdAddrs),
+    "\n  cusdGdIdx=", cusdGdIdx, "tokenCusdIdx=", tokenCusdIdx,
+    "\n  raw directPools status=", directPools?.map(r => r?.status),
+    "\n  raw cusdGdPools status=", cusdGdPools?.map(r => r?.status),
+    "\n  raw tokenCusdPools status=", tokenCusdPools?.map(r => r?.status),
+    "\n  raw cusdGdPools result=", JSON.stringify(cusdGdPools?.map(r => r?.result)),
+    "\n  raw tokenCusdPools result=", JSON.stringify(tokenCusdPools?.map(r => r?.result)),
+  );
   return { gdPerToken: 0, loading: false, error: true, routeType: null };
 }
 

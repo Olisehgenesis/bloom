@@ -1,8 +1,11 @@
 "use client";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAccount, useReadContract, useGasPrice } from "wagmi";
+import { useAccount, useReadContract } from "wagmi";
 import { WalletButton } from "@/components/Nav";
+import { TopBar } from "@/components/TopBar";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import {
   ChevronDown, Zap, User, PenLine, Loader2, CheckCircle2, AlertCircle,
   Settings2, SplitSquareHorizontal, Wallet, TrendingUp,
@@ -25,7 +28,7 @@ import {
 import { StreamBanner } from "@/components/stream/StreamBanner";
 import { StreamForm } from "@/components/stream/StreamForm";
 import type { Address } from "viem";
-import { formatUnits, parseUnits, isAddress } from "viem";
+import { parseUnits, isAddress } from "viem";
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  Live ticking stream simulation
@@ -190,25 +193,6 @@ export default function StreamPage() {
 
   const busy = bloom.step !== "idle" && bloom.step !== "done" && bloom.step !== "error";
 
-  // ── Gas estimate ───────────────────────────────────────────────────────────
-  const { data: gasPriceWei } = useGasPrice();
-  const gasUnits = (() => {
-    if (useExistingBalance) return 215_000; // startStream only
-    let units = needsApproval ? 55_000 : 0; // ERC-20 approve
-    if (isGD) {
-      units += 80_000;                        // depositGD (just transferFrom + credit)
-    } else {
-      units += routeType === "multihop"
-        ? (splitEnabled ? 250_000 : 220_000)  // V3 multi-hop deposit
-        : (splitEnabled ? 180_000 : 150_000); // V3 direct deposit
-    }
-    if (!depositOnly) units += 215_000;       // startStream
-    return units;
-  })();
-  const gasCelo = gasPriceWei && amountBig > 0n
-    ? parseFloat(formatUnits(gasPriceWei * BigInt(gasUnits), 18))
-    : null;
-
   async function handleStart() {
     if (!canSubmit || hasActiveStream) return;
     bloom.reset();
@@ -248,25 +232,56 @@ export default function StreamPage() {
   const ctaLabel = () => {
     if (!isConnected)         return "Connect wallet to continue";
     if (hasActiveStream)      return "Stop active stream first";
-    if (useExistingBalance)   return "Stream from existing balance";
+    if (useExistingBalance) {
+      if (!hasGDBalance)       return "No G$ balance to stream";
+      if (!isValidRecipient)   return "Enter a valid recipient";
+      if (recipientTaken)      return "Recipient already streaming";
+      return "Stream from existing balance";
+    }
+    if (amountBig === 0n)      return "Enter an amount";
+    if (insufficientBalance)   return `Insufficient ${token.symbol} balance`;
+    if (quoteLoading)          return "Loading price…";
+    if (quoteError && !isGD)   return "No swap route for this token";
+    if (belowMin)              return `Minimum ${Math.ceil(minWholeGD).toLocaleString()} G$`;
+    if (!depositOnly) {
+      if (!isValidRecipient)   return "Enter a valid recipient";
+      if (recipientCheckLoading) return "Checking recipient…";
+      if (recipientTaken)      return "Recipient already streaming";
+    }
     if (depositOnly)          return needsApproval ? "Approve & Deposit" : "Deposit G$";
     return needsApproval ? "Approve & Start Stream" : "Deposit & Start Stream";
   };
 
   return (
-    <div className="flex flex-col min-h-screen pb-28" style={{ background: "var(--bloom-bg)" }}>
-      <header className="flex items-center justify-between px-5 pt-12 pb-4">
-        <h1 className="text-xl font-bold text-[#111510]">Create Stream</h1>
-        <WalletButton />
-      </header>
+    <>
+      <TopBar title="Create stream" subtitle="Build a continuous payment" showAppControls />
 
-      <main className="flex-1 px-5 flex flex-col gap-4">
+      <main className="pt-4 flex flex-col gap-5">
+        <Card variant="surface" padding="lg">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--primary)]">Stream builder</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Create a Bloom streaming payment</h2>
+          <p className="mt-2 text-sm leading-6 text-[color:var(--muted-foreground)]">
+            Set a recipient, choose a deposit token, and let Bloom manage continuous flows from a single dashboard.
+          </p>
+        </Card>
 
         <StreamBanner
           hasGDBalance={hasGDBalance}
           useExistingBalance={useExistingBalance}
           gdBalance={gdBalance}
           onToggleUseBalance={() => setUseExistingBalance((value) => !value)}
+        />
+
+        <LiveStreamPreview
+          gdPerSecond={gdPerSecond}
+          gdTotal={gdTotal}
+          gdPerDay={gdPerDay}
+          duration={duration}
+          quoteLoading={quoteLoading}
+          quoteError={quoteError}
+          tokenSymbol={token.symbol}
+          routeType={routeType}
+          minWholeGD={minWholeGD}
         />
 
         {/* Active stream — Top Up panel */}
@@ -318,12 +333,12 @@ export default function StreamPage() {
         {/* Success */}
         {bloom.step === "done" && (
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-            className="bg-[#1FA36A]/10 border border-[#1FA36A]/30 rounded-2xl p-6 text-center">
-            <CheckCircle2 size={36} className="text-[#1FA36A] mx-auto mb-3" />
-            <div className="text-base font-bold text-[#111510] mb-1">
+            className="bg-[color:var(--brand-soft)] border border-[color:var(--primary)]/30 rounded-2xl p-6 text-center">
+            <CheckCircle2 size={36} className="text-[color:var(--primary)] mx-auto mb-3" />
+            <div className="text-base font-bold text-foreground mb-1">
               {depositOnly ? "Deposit complete!" : "Stream started!"}
             </div>
-            <div className="text-xs text-[#6B7A6E]">
+            <div className="text-xs text-[color:var(--muted-foreground)]">
               {depositOnly
                 ? `${fmtGD(gdTotal)} credited to your Bloom balance.`
                 : `~${fmtGPS(gdPerSecond)} flowing to `}
@@ -332,7 +347,7 @@ export default function StreamPage() {
               )}
             </div>
             <button onClick={() => { bloom.reset(); setAmount(""); setCustomAddr(""); }}
-              className="mt-4 text-xs text-[#1FA36A] font-semibold underline underline-offset-2">
+              className="mt-4 text-xs text-[color:var(--primary)] font-semibold underline underline-offset-2">
               {depositOnly ? "Deposit again" : "Start another stream"}
             </button>
           </motion.div>
@@ -387,12 +402,12 @@ export default function StreamPage() {
             canSubmit={canSubmit}
             hasActiveStream={hasActiveStream}
             handleStart={handleStart}
-            gasCelo={gasCelo}
+            ctaLabel={ctaLabel()}
             needsApproval={needsApproval}
           />
         )}
       </main>
-    </div>
+    </>
   );
 }
 

@@ -26,14 +26,14 @@ export function TokenBalance({ address, tokenAddress, decimals, onMax }: {
   const formatted = balance !== undefined ? parseFloat(formatUnits(balance, decimals)).toFixed(4) : "—";
 
   return (
-    <div className="flex items-center gap-2 text-[11px] text-[#6B7A6E] mt-2">
+    <div className="flex items-center gap-2 text-[11px] text-[color:var(--muted-foreground)] mt-2">
       <span>Balance:</span>
-      <span className="font-semibold text-[#111510]">{formatted}</span>
+      <span className="font-semibold text-foreground">{formatted}</span>
       {balance !== undefined && balance > 0n && (
         <button
           type="button"
           onClick={() => onMax(formatUnits(balance, decimals))}
-          className="text-[#1FA36A] font-semibold underline underline-offset-2"
+          className="text-[color:var(--primary)] font-semibold underline underline-offset-2"
         >
           Max
         </button>
@@ -55,8 +55,8 @@ export function SlippagePicker({ value, onChange }: { value: number; onChange: (
   }
 
   return (
-    <div className="rounded-3xl border border-[#DDE3DC] bg-[#F7F6F1] p-4 mt-3">
-      <div className="text-[10px] font-semibold uppercase tracking-widest text-[#6B7A6E] mb-3">Slippage tolerance</div>
+    <div className="rounded-3xl border border-[color:var(--border)] bg-muted p-4 mt-3">
+      <div className="text-[10px] font-semibold uppercase tracking-widest text-[color:var(--muted-foreground)] mb-3">Slippage tolerance</div>
       <div className="flex flex-wrap gap-2">
         {presets.map((bps) => (
           <Button
@@ -76,7 +76,7 @@ export function SlippagePicker({ value, onChange }: { value: number; onChange: (
             placeholder="Custom"
             className="pr-10"
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[#6B7A6E]">%</span>
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-[color:var(--muted-foreground)]">%</span>
         </div>
       </div>
     </div>
@@ -111,12 +111,12 @@ export function TokenDropdownRow({
       onClick={onSelect}
       className={cn(
         "w-full px-4 py-3 text-left transition-colors",
-        selected ? "bg-[#1FA36A]/10 text-[#1FA36A]" : "hover:bg-[#F7F6F1] text-[#111510]",
+        selected ? "bg-[color:var(--brand-soft)] text-[color:var(--primary)]" : "hover:bg-muted text-foreground",
       )}
     >
       <div className="flex items-center justify-between gap-3">
         <span>{token.symbol}</span>
-        <span className="text-xs text-[#6B7A6E]">{formatted}</span>
+        <span className="text-xs text-[color:var(--muted-foreground)]">{formatted}</span>
       </div>
     </button>
   );

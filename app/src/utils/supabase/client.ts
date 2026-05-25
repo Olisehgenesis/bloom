@@ -3,44 +3,18 @@ import { createBrowserClient } from "@supabase/ssr";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-const cookieMethods = {
-  get: (key: string) => {
-    const match = document.cookie.match(
-      new RegExp(`(?:^|; )${encodeURIComponent(key)}=([^;]*)`),
-    );
-    return match ? decodeURIComponent(match[1]) : null;
-  },
-  set: (key: string, value: string, options: Record<string, unknown> = {}) => {
-    let cookie = `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
-    if (options.maxAge) cookie += `; Max-Age=${options.maxAge}`;
-    if (options.expires) cookie += `; Expires=${options.expires}`;
-    if (options.path) cookie += `; Path=${options.path}`;
-    if (options.domain) cookie += `; Domain=${options.domain}`;
-    if (options.sameSite) cookie += `; SameSite=${options.sameSite}`;
-    if (options.secure) cookie += `; Secure`;
-    document.cookie = cookie;
-  },
-  remove: (key: string, options: Record<string, unknown> = {}) => {
-    document.cookie = `${encodeURIComponent(key)}=; Max-Age=0; Path=${options.path ?? '/'};`;
-  },
-  delete: (key: string, options: Record<string, unknown> = {}) => {
-    document.cookie = `${encodeURIComponent(key)}=; Max-Age=0; Path=${options.path ?? '/'};`;
-  },
-};
+const isBrowser = typeof document !== "undefined" && typeof window !== "undefined";
 
-export const createClient = () =>
-  createBrowserClient(
-    supabaseUrl!,
-    supabaseKey!,
-    {
-      cookies: cookieMethods,
-      cookieOptions: {
-        path: "/",
-        sameSite: "lax",
-        secure: process.env.NODE_ENV === "production",
-      },
-    },
-  );
+export const createClient = () => {
+  if (!isBrowser) {
+    throw new Error("Supabase client can only be created in the browser environment.");
+  }
+
+  // @supabase/ssr >= 0.5 manages document.cookie automatically and uses the
+  // getAll/setAll cookie protocol shared with the server client. We rely on
+  // that default behavior here so session cookies are visible to middleware.
+  return createBrowserClient(supabaseUrl!, supabaseKey!);
+};
 
 export const getAuthHeaders = async (): Promise<Record<string, string>> => {
   const supabase = createClient();
