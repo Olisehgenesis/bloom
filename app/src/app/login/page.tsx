@@ -24,6 +24,36 @@ export default function LoginPage() {
   const { unlockInternal } = useWalletSession();
   const supabase = useMemo(() => (typeof window !== "undefined" ? createClient() : null), []);
   const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
+  const [showAllWallets, setShowAllWallets] = useState(false);
+
+  // Dedupe + sort connectors so the modal stays tidy when many wallet
+  // extensions are installed and EIP-6963 announces all of them. Known good
+  // wallets float to the top; the rest collapse behind a "Show more" expander.
+  const WALLET_PRIORITY = [
+    "metamask", "rabby", "coinbase", "walletconnect", "trust",
+    "phantom", "rainbow", "brave", "okx", "bitget", "injected",
+  ];
+  const sortedConnectors = useMemo(() => {
+    const seen = new Set<string>();
+    const deduped = connectors.filter((c) => {
+      const key = (c.name || c.id).toLowerCase().trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const rank = (c: Connector) => {
+      const n = (c.name || c.id).toLowerCase();
+      const i = WALLET_PRIORITY.findIndex((w) => n.includes(w));
+      return i === -1 ? 999 : i;
+    };
+    return [...deduped].sort((a, b) => rank(a) - rank(b));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectors]);
+  const VISIBLE_LIMIT = 4;
+  const visibleConnectors = showAllWallets
+    ? sortedConnectors
+    : sortedConnectors.slice(0, VISIBLE_LIMIT);
+  const hiddenCount = Math.max(0, sortedConnectors.length - VISIBLE_LIMIT);
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -913,7 +943,7 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2.5">
-                {connectors.length > 0 ? connectors.map((connector) => {
+                {visibleConnectors.length > 0 ? visibleConnectors.map((connector) => {
                   const isBusy = walletLinking && selectedConnector?.id === connector.id;
                   return (
                     <button
@@ -926,7 +956,7 @@ export default function LoginPage() {
                       <span className="grid h-9 w-9 place-items-center rounded-xl bg-[color:var(--brand-soft)] text-[color:var(--primary)]">
                         <Wallet size={16} />
                       </span>
-                      <span className="flex-1">{connector.name}</span>
+                      <span className="flex-1 truncate">{connector.name}</span>
                       {isBusy
                         ? <Loader2 size={16} className="animate-spin text-[color:var(--primary)]" />
                         : <ArrowRight size={16} className="text-[color:var(--muted-foreground)]" />}
@@ -936,6 +966,15 @@ export default function LoginPage() {
                   <div className="rounded-2xl border border-[color:var(--border)] bg-muted p-4 text-sm">
                     No wallet connectors found. Refresh or use email login.
                   </div>
+                )}
+                {hiddenCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllWallets((v) => !v)}
+                    className="w-full rounded-2xl border border-dashed border-[color:var(--border)] bg-transparent px-4 py-2.5 text-xs font-semibold text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)]"
+                  >
+                    {showAllWallets ? "Show fewer wallets" : `Show ${hiddenCount} more wallet${hiddenCount === 1 ? "" : "s"}`}
+                  </button>
                 )}
               </div>
 
