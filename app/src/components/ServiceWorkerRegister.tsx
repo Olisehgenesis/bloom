@@ -19,6 +19,12 @@ export function ServiceWorkerRegister() {
     }
 
     let registration: ServiceWorkerRegistration | null = null;
+    // Snapshot whether this tab was already controlled by a SW BEFORE we
+    // register. If it wasn't (first install / brand-new visit), the SW's
+    // `clients.claim()` will fire `controllerchange` once — that is NOT an
+    // update and must NOT trigger a reload, otherwise we loop forever on
+    // every fresh sign-in.
+    const hadControllerAtStart = !!navigator.serviceWorker.controller;
 
     navigator.serviceWorker
       .register("/sw.js", { updateViaCache: "none" })
@@ -46,6 +52,9 @@ export function ServiceWorkerRegister() {
     // Once the new SW takes control, reload so the user sees the new build.
     let reloading = false;
     const onControllerChange = () => {
+      // Skip the first-install controllerchange (clients.claim()). Only reload
+      // when this tab was already controlled (true post-deploy update).
+      if (!hadControllerAtStart) return;
       if (reloading) return;
       reloading = true;
       window.location.reload();
