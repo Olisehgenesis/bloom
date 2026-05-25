@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useAccount } from "wagmi";
+import { useAuthAddress } from "@/lib/useAuthAddress";
 import { WalletButton } from "@/components/Nav";
 import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,9 @@ const DURATION_OPTIONS = [
 ];
 
 export default function CompoundPage() {
-  const { address, isConnected } = useAccount();
+  const { address: wagmiAddress, isConnected } = useAccount();
+  const { address: authAddress } = useAuthAddress();
+  const address = (wagmiAddress ?? authAddress) as `0x${string}` | undefined;
   const { account, loading }     = useBloomAccount(address as Address | undefined);
   const bloom                    = useBloomWrite();
   const [pct, setPct]            = useState(25);

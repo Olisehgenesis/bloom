@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAccount, useReadContract } from "wagmi";
+import { useAuthAddress } from "@/lib/useAuthAddress";
 import { WalletButton } from "@/components/Nav";
 import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/button";
@@ -61,7 +62,13 @@ function parseDurationInput(val: string, unit: "hours" | "days" | "weeks"): numb
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function StreamPage() {
-  const { address, isConnected } = useAccount();
+  // wagmi-connected address (needed to sign transactions). May briefly be
+  // undefined on hard navigation while wagmi auto-reconnects from cookie
+  // storage. We fall back to the SIWE-verified address for read-only data
+  // so the page renders the user's wallet immediately.
+  const { address: wagmiAddress, isConnected } = useAccount();
+  const { address: authAddress } = useAuthAddress();
+  const address = (wagmiAddress ?? authAddress) as `0x${string}` | undefined;
 
   // ── Core form state ────────────────────────────────────────────────────────
   const [token,         setToken]        = useState(DEPOSIT_TOKENS[0]);

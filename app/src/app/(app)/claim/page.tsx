@@ -9,6 +9,7 @@ import {
   useSignMessage,
   useWriteContract,
 } from "wagmi";
+import { useAuthAddress } from "@/lib/useAuthAddress";
 import { createPublicClient, http, zeroAddress, formatUnits, parseAbi } from "viem";
 import { celo } from "viem/chains";
 import {
@@ -122,7 +123,9 @@ function pluralDays(n: number) {
 
 // ─── Page ────────────────────────────────────────────────────────────
 export default function ClaimPage() {
-  const { address, isConnected } = useAccount();
+  const { address: wagmiAddress, isConnected } = useAccount();
+  const { address: authAddress } = useAuthAddress();
+  const address = (wagmiAddress ?? authAddress) as `0x${string}` | undefined;
   const chainId = useChainId();
   const { writeContractAsync } = useWriteContract();
   const { signMessageAsync } = useSignMessage();
