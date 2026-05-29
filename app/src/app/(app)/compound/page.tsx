@@ -125,7 +125,7 @@ export default function CompoundPage() {
             </div>
 
             {/* Growth rate slider */}
-            <div className="bg-card rounded-2xl border border-[color:var(--border)] p-4 shadow-sm">
+            <Card padding="md">
               <div className="flex justify-between mb-3">
                 <span className="text-xs font-semibold text-[color:var(--muted-foreground)] uppercase tracking-widest">
                   Growth per Restream
@@ -138,10 +138,10 @@ export default function CompoundPage() {
               <div className="flex justify-between text-[10px] text-[color:var(--muted-foreground)] mt-1">
                 <span>5%</span><span>100%</span>
               </div>
-            </div>
+            </Card>
 
             {/* Projection table — computed client-side (same formula as contract) */}
-            <div className="bg-card rounded-2xl border border-[color:var(--border)] p-4 shadow-sm">
+            <Card padding="md">
               <h2 className="text-xs font-semibold text-[color:var(--muted-foreground)] uppercase tracking-widest mb-3 flex items-center gap-2">
                 <TrendingUp size={12} /> Projected Growth (+{pct}%/restream)
               </h2>
@@ -171,25 +171,28 @@ export default function CompoundPage() {
                   );
                 })}
               </div>
-            </div>
+            </Card>
 
             {/* Restream duration picker */}
-            <div className="bg-card rounded-2xl border border-[color:var(--border)] p-4 shadow-sm">
+            <Card padding="md">
               <label className="text-xs font-semibold text-[color:var(--muted-foreground)] uppercase tracking-widest block mb-3">
                 New Stream Duration
               </label>
               <div className="flex gap-2">
                 {DURATION_OPTIONS.map(d => (
-                  <button key={d.label} onClick={() => setRestreamDuration(d)}
-                    className={`flex-1 py-2 rounded-xl text-xs font-semibold border transition-colors
-                      ${restreamDuration.label === d.label
-                        ? "bg-[color:var(--primary)] text-white border-[color:var(--primary)]"
-                        : "bg-muted text-[color:var(--muted-foreground)] border-[color:var(--border)]"}`}>
+                  <Button
+                    key={d.label}
+                    type="button"
+                    size="sm"
+                    block
+                    variant={restreamDuration.label === d.label ? "primary" : "secondary"}
+                    onClick={() => setRestreamDuration(d)}
+                  >
                     {d.label}
-                  </button>
+                  </Button>
                 ))}
               </div>
-            </div>
+            </Card>
 
             {/* Restream cooldown notice */}
             {!account.canRestream && (
@@ -209,20 +212,18 @@ export default function CompoundPage() {
             )}
 
             {/* Restream CTA */}
-            <motion.button whileTap={{ scale: 0.97 }}
+            <Button
+              block
+              size="xl"
               disabled={!account.canRestream || (bloom.step !== "idle" && bloom.step !== "error")}
               onClick={handleRestream}
-              className={`w-full py-4 rounded-2xl font-semibold text-sm
-                flex items-center justify-center gap-2 shadow-lg transition-all
-                ${account.canRestream
-                  ? "bg-[color:var(--primary)] text-white shadow-[color:var(--brand-500)]/25"
-                  : "bg-[color:var(--muted)] text-[color:var(--muted-foreground)] cursor-not-allowed"}`}>
+            >
               {bloom.step === "restreaming"
                 ? <><Loader2 size={16} className="animate-spin" /> Restreaming…</>
                 : bloom.step === "done"
                   ? <><CheckCircle2 size={16} /> Restreamed!</>
                   : <><RefreshCw size={16} /> Restream Now</>}
-            </motion.button>
+            </Button>
           </>
         )}
       </main>

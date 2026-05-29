@@ -1,14 +1,42 @@
 {
+  "id": "/",
   "name": "Bloom",
   "short_name": "Bloom",
   "description": "Bloom — real-time money streaming powered by Celo, Superfluid, and GoodDollar.",
-  "start_url": "/",
+  "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#F8F7FC",
   "theme_color": "#8B5CF6",
   "orientation": "portrait-primary",
   "categories": ["finance", "web3", "productivity"],
+  "launch_handler": {
+    "client_mode": "navigate-existing"
+  },
+  "shortcuts": [
+    {
+      "name": "Create stream",
+      "short_name": "Stream",
+      "description": "Start a new continuous payment.",
+      "url": "/stream",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Daily claim",
+      "short_name": "Claim",
+      "description": "Claim your daily GoodDollar.",
+      "url": "/claim",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Grow",
+      "short_name": "Grow",
+      "description": "Compound your active stream.",
+      "url": "/compound",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
   "icons": [
     {
       "src": "/icon-192.png",

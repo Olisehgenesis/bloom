@@ -12,9 +12,12 @@ export default function AppLoading() {
           priority
           className="h-16 w-16 rounded-2xl elev-brand animate-pulse"
         />
-        <p className="text-[11px] font-semibold tracking-[0.3em] uppercase text-[color:var(--muted-foreground)]">
-          Loading
-        </p>
+        <div className="space-y-1 text-center">
+          <p className="text-[11px] font-semibold tracking-[0.3em] uppercase text-[color:var(--muted-foreground)]">
+            Loading
+          </p>
+          <p className="text-xs text-[color:var(--muted-foreground)]">Preparing your stream data</p>
+        </div>
       </div>
     </div>
   );

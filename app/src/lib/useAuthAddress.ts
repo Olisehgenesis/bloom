@@ -4,6 +4,44 @@ import { useEffect, useState } from "react";
 import { useAccount } from "wagmi";
 import type { Address } from "viem";
 
+// ── Module-level cache ────────────────────────────────────────────────────────
+// /api/auth/me result is cached for the lifetime of the JS bundle (i.e. while
+// the tab is open). This prevents every page navigation from firing a new
+// network round-trip and causing a loading flash.
+// Call invalidateAuthCache() before client-side navigation to /login so the
+// next login starts fresh.
+type AuthCache = {
+  authenticated: boolean;
+  method: "wallet" | "supabase" | null;
+  walletAddress: string | null;
+};
+
+let _authCache: AuthCache | null = null;
+let _authPromise: Promise<AuthCache> | null = null;
+
+function fetchAuthOnce(): Promise<AuthCache> {
+  if (_authCache) return Promise.resolve(_authCache);
+  if (_authPromise) return _authPromise;
+  _authPromise = fetch("/api/auth/me", { credentials: "include" })
+    .then((r) => r.json())
+    .then((json: AuthCache) => {
+      _authCache = json;
+      return json;
+    })
+    .catch((): AuthCache => {
+      const fallback: AuthCache = { authenticated: false, method: null, walletAddress: null };
+      _authCache = fallback;
+      return fallback;
+    });
+  return _authPromise;
+}
+
+/** Call this on logout (before navigating away) so the next session starts fresh. */
+export function invalidateAuthCache() {
+  _authCache = null;
+  _authPromise = null;
+}
+
 /**
  * Returns the address the user is authenticated as.
  *
@@ -13,9 +51,8 @@ import type { Address } from "viem";
  *   render the correct wallet immediately on hard navigation, before wagmi
  *   has had a chance to auto-reconnect from cookie storage.
  *
- * The returned `address` is the value to use for display and read-only
- * queries. Use the wagmi `address` directly when initiating a transaction
- * (you need an active connector to sign).
+ * The `/api/auth/me` result is cached at module level — only one fetch fires
+ * per browser session regardless of how many pages call this hook.
  */
 export function useAuthAddress(): {
   address: Address | undefined;
@@ -26,27 +63,21 @@ export function useAuthAddress(): {
   const { address: wagmiAddress, isConnected } = useAccount();
   const [siweAddress, setSiweAddress] = useState<Address | undefined>(undefined);
   const [authMethod, setAuthMethod] = useState<"wallet" | "supabase" | null>(null);
-  const [loading, setLoading] = useState(true);
+  // If the cache is already warm, start with loading=false immediately.
+  const [loading, setLoading] = useState(() => _authCache === null);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/auth/me", { credentials: "include" });
-        const json = await res.json();
-        if (cancelled) return;
-        if (res.ok && json?.authenticated) {
-          setAuthMethod(json.method === "wallet" ? "wallet" : "supabase");
-          if (json.method === "wallet" && json.walletAddress) {
-            setSiweAddress(json.walletAddress as Address);
-          }
+    fetchAuthOnce().then((json) => {
+      if (cancelled) return;
+      if (json?.authenticated) {
+        setAuthMethod(json.method === "wallet" ? "wallet" : "supabase");
+        if (json.method === "wallet" && json.walletAddress) {
+          setSiweAddress(json.walletAddress as Address);
         }
-      } catch {
-        /* ignore */
-      } finally {
-        if (!cancelled) setLoading(false);
       }
-    })();
+      setLoading(false);
+    });
     return () => {
       cancelled = true;
     };

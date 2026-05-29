@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Bloom — System Architecture</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  :root { --ink:#1a1430; --accent:#7c3aed; --muted:#6b7280; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink);
+    max-width: 1000px;
+    margin: 40px auto;
+    padding: 0 32px 80px;
+    line-height: 1.55;
+  }
+  h1 { font-size: 28px; margin: 0 0 4px; }
+  h2 { font-size: 18px; margin: 32px 0 8px; border-bottom: 2px solid #ece9f7; padding-bottom: 6px; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+  .meta { font-size: 13px; color: var(--muted); margin-bottom: 24px; }
+  .diagram { background:#faf9ff; border:1px solid #ece9f7; border-radius:12px; padding:24px; margin:16px 0; }
+  table { width:100%; border-collapse: collapse; font-size: 14px; margin: 8px 0 16px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid #ece9f7; vertical-align: top; }
+  th { background:#f5f3ff; }
+  code { background:#f5f3ff; padding:1px 6px; border-radius:4px; font-size:12.5px; }
+  .legend { display:flex; gap:18px; flex-wrap:wrap; font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+  .legend span::before { content:""; display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align: middle; }
+  .l-client::before { background:#c7d2fe; }
+  .l-app::before { background:#fde68a; }
+  .l-chain::before { background:#bbf7d0; }
+  .l-external::before { background:#fecaca; }
+  @media print {
+    body { margin: 0; padding: 16px 24px; max-width: 100%; }
+    .diagram { break-inside: avoid; }
+    .pagebreak { page-break-before: always; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Bloom — System Architecture</h1>
+<p class="sub">Real-time money streaming on Celo, powered by Superfluid and GoodDollar.</p>
+<p class="meta">
+  Applicant: Mwijusya Oliseh &nbsp;·&nbsp; System: Bloom &nbsp;·&nbsp; Ref: MoICT&amp;NG/DIEG/2025-26/001-AF<br/>
+  Deployment: <code>https://bloom-app.vercel.app</code> &nbsp;·&nbsp;
+  BloomProxy (Celo Mainnet): <code>0x754BeaE204d91aD6bFf2f5eED0fB4D6fD5e0c89d</code>
+</p>
+
+<h2>1. High-Level Architecture</h2>
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  subgraph CLIENT["Client tier"]
+    direction TB
+    U["End user<br/>(low-end Android / desktop)"]
+    PWA["Bloom PWA<br/>Next.js 16 · React 19<br/>Installable · Offline-capable"]
+    W["Browser wallet<br/>(WalletConnect / Injected)"]
+    U --> PWA
+    PWA --> W
+  end
+
+  subgraph APP["Application tier — Vercel Edge"]
+    direction TB
+    API["Next.js API Routes"]
+    SIWE["Auth: Sign-In-With-Ethereum<br/>(SIWE + Supabase session cookie)"]
+    FQ["Fonbnk widget URL signer<br/>(JWT HS256)"]
+    GQ["G$ quote / verification helpers"]
+    API --> SIWE
+    API --> FQ
+    API --> GQ
+  end
+
+  subgraph DATA["Data tier"]
+    SUPA[("Supabase Postgres<br/>· wallets table only<br/>· RLS enabled")]
+  end
+
+  subgraph CHAIN["Celo Mainnet (L1)"]
+    BLOOM["BloomProxy (UUPS)<br/>0x754BeaE2…c89d"]
+    SF["Superfluid Host<br/>+ G$ Super Token"]
+    UNI["Uniswap V3<br/>Factory · Router02 · QuoterV2"]
+    GD["GoodDollar (G$) token<br/>+ Identity contract"]
+  end
+
+  subgraph EXT["External rails"]
+    FONBNK["Fonbnk on/off-ramp<br/>(MTN MoMo · Airtel Money)"]
+    GDV["GoodDollar Face Verification<br/>(Sybil-resistant identity)"]
+  end
+
+  PWA -- "HTTPS / TLS 1.3" --> API
+  SIWE <--> SUPA
+  PWA -- "RPC (viem / wagmi)" --> CHAIN
+  W -- "Sign tx" --> CHAIN
+  BLOOM --> UNI
+  BLOOM --> SF
+  BLOOM --> GD
+  PWA -- "Signed widget URL" --> FONBNK
+  FONBNK -- "UGX → token, payout to wallet" --> W
+  PWA --> GDV
+  GDV --> GD
+
+  classDef client fill:#c7d2fe,stroke:#4f46e5,color:#1e1b4b;
+  classDef app fill:#fde68a,stroke:#b45309,color:#3f2d05;
+  classDef chain fill:#bbf7d0,stroke:#047857,color:#064e3b;
+  classDef external fill:#fecaca,stroke:#b91c1c,color:#7f1d1d;
+  class U,PWA,W client;
+  class API,SIWE,FQ,GQ,SUPA app;
+  class BLOOM,SF,UNI,GD chain;
+  class FONBNK,GDV external;
+</pre>
+<div class="legend">
+  <span class="l-client">Client tier</span>
+  <span class="l-app">Application &amp; data tier</span>
+  <span class="l-chain">Blockchain tier (Celo)</span>
+  <span class="l-external">External rails</span>
+</div>
+</div>
+
+<h2>2. Components</h2>
+<table>
+  <tr><th>Layer</th><th>Component</th><th>Purpose</th></tr>
+  <tr><td>Client</td><td>Bloom PWA (Next.js 16, React 19, Tailwind v4)</td><td>UI, wallet connect, offline-capable, installable on Android.</td></tr>
+  <tr><td>Client</td><td>Browser wallet (WalletConnect / injected)</td><td>Holds user keys; signs every transaction. Bloom never sees the private key.</td></tr>
+  <tr><td>App</td><td>Next.js API Routes on Vercel Edge</td><td>Auth, Fonbnk URL signing, G$ quote helpers. Stateless, auto-scaling.</td></tr>
+  <tr><td>App</td><td>Sign-In-With-Ethereum (SIWE)</td><td>Wallet-based login. Session stored as HttpOnly Supabase cookie.</td></tr>
+  <tr><td>Data</td><td>Supabase Postgres (EU region)</td><td>Single <code>wallets</code> table linking address ↔ session. Row-Level Security on.</td></tr>
+  <tr><td>Chain</td><td>BloomProxy (UUPS upgradeable)</td><td>Holds deposit logic, token-route registry, swap + stream orchestration.</td></tr>
+  <tr><td>Chain</td><td>Uniswap V3</td><td>Swaps any supported token → G$ via direct or CELO-hop pools.</td></tr>
+  <tr><td>Chain</td><td>Superfluid + G$ Super Token</td><td>Per-second money streaming primitive.</td></tr>
+  <tr><td>External</td><td>Fonbnk widget</td><td>UGX → crypto on-ramp via MTN / Airtel Mobile Money. Payout lands directly in the user wallet.</td></tr>
+  <tr><td>External</td><td>GoodDollar Face Verification</td><td>Sybil-resistant proof-of-personhood; eliminates ghost recipients.</td></tr>
+</table>
+
+<h2>3. Deposit &amp; Stream Flow</h2>
+<div class="diagram">
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant User
+  participant PWA as Bloom PWA
+  participant API as Next.js API
+  participant Fonbnk
+  participant Wallet
+  participant Bloom as BloomProxy
+  participant UniV3 as Uniswap V3
+  participant SF as Superfluid + G$
+
+  User->>PWA: Open app, connect wallet
+  PWA->>API: SIWE nonce / verify
+  API-->>PWA: Session cookie
+
+  alt Top-up from Mobile Money
+    PWA->>API: Request signed Fonbnk URL (wallet addr)
+    API-->>PWA: JWT-signed widget URL
+    PWA->>Fonbnk: Launch widget
+    User->>Fonbnk: Pay UGX via MTN / Airtel
+    Fonbnk->>Wallet: Deliver token to user wallet
+  end
+
+  PWA->>UniV3: Quote route tokenIn → G$ (off-chain)
+  UniV3-->>PWA: sqrtPriceX96, minOut estimate
+
+  User->>Wallet: Approve BloomProxy to spend tokenIn
+  Wallet->>Bloom: approve()
+  User->>Wallet: deposit(token, amount, splitBps, minGDOut)
+  Wallet->>Bloom: deposit(...)
+  Bloom->>UniV3: swap tokenIn → G$
+  UniV3-->>Bloom: G$ amount
+
+  User->>Wallet: startStream(recipient, duration)
+  Wallet->>Bloom: startStream(...)
+  Bloom->>SF: createFlow(G$, recipient, flowRate)
+  SF-->>Recipient: G$ accrues per second
+
+  Recipient->>SF: claim / off-ramp to MoMo via Fonbnk
+</pre>
+</div>
+
+<h2>4. Data Flow Summary</h2>
+<ul>
+  <li><strong>Identity:</strong> wallet address is the canonical user ID. SIWE proves ownership; Supabase session binds it to an HttpOnly cookie. Optional GoodDollar face verification adds proof-of-personhood.</li>
+  <li><strong>Value:</strong> UGX → token (Fonbnk) → G$ (Uniswap V3 inside BloomProxy) → continuous stream (Superfluid) → recipient → off-ramp to MoMo (Fonbnk).</li>
+  <li><strong>State:</strong> all financial state lives on-chain (deposits, swaps, streams). Supabase stores only the wallet ↔ session mapping. No PII is persisted server-side.</li>
+  <li><strong>Audit:</strong> every deposit, swap, stream and claim emits a Celo event — publicly queryable, immutable, and exportable to M&amp;E dashboards.</li>
+</ul>
+
+<h2>5. Security &amp; Compliance Controls</h2>
+<table>
+  <tr><th>Concern</th><th>Control</th></tr>
+  <tr><td>Authentication</td><td>SIWE (EIP-4361). No passwords. Session cookies are HttpOnly, Secure, SameSite=Lax.</td></tr>
+  <tr><td>Authorization</td><td>Supabase Row-Level Security; on-chain access controls on BloomProxy admin functions (Ownable + UUPS).</td></tr>
+  <tr><td>Transport</td><td>TLS 1.3 end-to-end (Vercel + Supabase). HSTS enabled.</td></tr>
+  <tr><td>At-rest</td><td>Supabase encrypts disk volumes; secrets in Vercel encrypted env store.</td></tr>
+  <tr><td>Key custody</td><td>Self-custodial: user keys never touch Bloom servers.</td></tr>
+  <tr><td>Sybil resistance</td><td>GoodDollar face verification per recipient — eliminates ghost beneficiaries.</td></tr>
+  <tr><td>Audit log</td><td>On-chain events (immutable) + Vercel request logs (90 days).</td></tr>
+  <tr><td>Data protection</td><td>Aligned with Uganda Data Protection &amp; Privacy Act 2019: minimal PII, EU data region, user-controlled wallet identity.</td></tr>
+</table>
+
+<h2>6. Interoperability &amp; Government Integration Points</h2>
+<ul>
+  <li><strong>NIRA / National ID:</strong> NIN can be bound to a wallet via a one-time attestation API (KYC tier upgrade).</li>
+  <li><strong>URA:</strong> on-chain disbursement records exportable as CSV / API for tax-compliant reporting.</li>
+  <li><strong>NITA-U:</strong> deployable behind NITA-U gateway; supports REST/JSON for inter-agency integration.</li>
+  <li><strong>Mobile money:</strong> already live with MTN MoMo and Airtel Money via Fonbnk.</li>
+</ul>
+
+<p style="margin-top:48px; color:var(--muted); font-size:12px;">
+  Confidential — submitted under the MoICT&amp;NG Government Systems Prototype Showcase 2026.
+</p>
+
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "default", flowchart: { curve: "basis" } });
+</script>
+</body>
+</html>

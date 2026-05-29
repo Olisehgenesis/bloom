@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useConfig, useConnect, useDisconnect } from "wagmi";
+import { useConfig, useConnect, useDisconnect, useReconnect } from "wagmi";
 import type { Hex } from "viem";
 import { decryptPrivateKey } from "@/utils/walletAccount";
 import { privateKeyConnector, PRIVATE_KEY_CONNECTOR_ID } from "@/lib/privateKeyConnector";
@@ -149,6 +149,7 @@ export function WalletSessionProvider({ children }: { children: ReactNode }) {
   const config = useConfig();
   const { connectAsync } = useConnect();
   const { disconnectAsync } = useDisconnect();
+  const { reconnect } = useReconnect();
   const [internalUnlocked, setInternalUnlocked] = useState(false);
   const [msUntilAutoLock, setMsUntilAutoLock] = useState<number | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
@@ -219,10 +220,22 @@ export function WalletSessionProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     (async () => {
       const stored = await idbGet();
-      if (!stored || cancelled) return;
+      if (cancelled) return;
+
+      if (!stored) {
+        // No internal wallet in IndexedDB — restore any previously authorized
+        // external connector (injected, WalletConnect, Coinbase) from wagmi's
+        // cookieStorage. This replaces the old top-level <ReconnectOnMount />
+        // and runs AFTER the IndexedDB check so the two connect() calls never
+        // race each other.
+        try { reconnect(); } catch (err) { console.warn("wagmi reconnect failed:", err); }
+        return;
+      }
+
       const age = Date.now() - stored.lastActivity;
       if (age >= IDLE_TIMEOUT_MS) {
         await idbClear();
+        try { reconnect(); } catch (err) { console.warn("wagmi reconnect failed:", err); }
         return;
       }
       try {
@@ -235,6 +248,8 @@ export function WalletSessionProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         console.warn("Wallet session restore failed:", err);
         await idbClear();
+        // Internal restore failed — fall back to external reconnect.
+        try { reconnect(); } catch (err2) { console.warn("wagmi reconnect failed:", err2); }
       }
     })();
     return () => {

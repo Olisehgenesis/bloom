@@ -1,93 +1,83 @@
-@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
 @import "tailwindcss";
-
-/* ─────────────────────────────────────────────────────────────
-   Bloom design tokens — Soft Fintech palette.
-   Primary purple + playful pink, lavender backgrounds, soft shadows.
-   ─────────────────────────────────────────────────────────── */
-
 :root {
-  /* Brand — Purple */
-  --brand-500: #8B5CF6;        /* primary */
-  --brand-600: #6D28D9;        /* pressed / dark accent */
-  --brand-400: #A78BFA;        /* hover / glow */
-  --brand-300: #C4B5FD;        /* light purple */
-  --brand-soft: #F3F0FF;       /* soft surface tint */
+  --color-black: #000000;
+  --color-cream: #F9EFE5;
+  --color-white: #FFFFFF;
+  --color-gray-100: #F5F5F5;
+  --color-gray-400: #AAAAAA;
+  --color-gray-700: #444444;
+  --color-promo-pink: #FFD6DC;
+  --color-promo-pink-text: #CC3355;
 
-  /* Accent — Pink */
-  --accent-pink: #F472B6;
-  --accent-pink-soft: #FCE7F3;
-
-  /* Legacy accent (kept so old refs render in-palette) */
-  --accent-lime: var(--accent-pink);
-
-  /* Semantic — light */
-  --background: #F8F7FC;       /* almost-white lavender */
-  --foreground: #111827;       /* primary text */
-  --muted: #F3F0FF;            /* secondary surface */
-  --muted-foreground: #6B7280; /* secondary text */
+  --background: var(--color-white);
+  --foreground: var(--color-black);
+  --muted: var(--color-gray-100);
+  --muted-foreground: var(--color-gray-400);
   --card: #FFFFFF;
-  --card-foreground: #111827;
-  --border: #ECE9F7;
-  --border-strong: #DAD2F2;
+  --card-foreground: var(--color-black);
+  --border: #EEEEEE;
+  --border-strong: #DDDDDD;
   --input: #FFFFFF;
-  --ring: rgba(139, 92, 246, 0.35);
+  --ring: rgba(0, 0, 0, 0.3);
 
-  --primary: var(--brand-500);
+  --primary: var(--color-black);
   --primary-foreground: #FFFFFF;
 
-  /* Text scale */
-  --text-primary: #111827;
-  --text-secondary: #6B7280;
-  --text-muted: #9CA3AF;
+  --brand-500: var(--color-black);
+  --brand-600: #111111;
+  --brand-400: #333333;
+  --brand-300: #666666;
+  --brand-soft: var(--color-gray-100);
+  --accent-pink: var(--color-promo-pink);
+  --accent-pink-soft: #FFE6EA;
+  --accent-lime: var(--accent-pink);
 
-  --danger: #E11D48;
-  --danger-soft: #FEE2E2;
-  --warning: #D97706;
-  --warning-soft: #FEF3C7;
+  --danger: #CC0000;
+  --danger-soft: #FFE8E8;
+  --warning: #B7791F;
+  --warning-soft: #FFF8E5;
+  --success: #2E7D32;
+  --success-soft: #EAF7EA;
 
-  --success: #22C55E;
-  --success-soft: #DCFCE7;
+  --text-primary: var(--color-black);
+  --text-secondary: var(--color-gray-700);
+  --text-muted: var(--color-gray-400);
 
-  /* Radius scale (very rounded) */
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
-  --radius-xl: 22px;
-  --radius-2xl: 28px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 24px;
   --radius-pill: 999px;
 
-  /* Elevation — soft purple shadows */
-  --elev-1: 0 1px 2px rgba(139, 92, 246, 0.05), 0 1px 1px rgba(17, 24, 39, 0.03);
-  --elev-2: 0 4px 12px rgba(139, 92, 246, 0.08), 0 2px 4px rgba(139, 92, 246, 0.04);
-  --elev-3: 0 12px 32px rgba(139, 92, 246, 0.12), 0 4px 12px rgba(139, 92, 246, 0.06);
-  --elev-brand: 0 12px 32px rgba(139, 92, 246, 0.22);
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
 
-  /* Motion */
+  --elev-1: none;
+  --elev-2: none;
+  --elev-3: none;
+  --elev-brand: none;
+
+  --screen-padding: 20px;
+  --section-gap: 24px;
+  --card-padding: 16px;
+  --list-item-height: 64px;
+  --nav-height: 72px;
+  --surface: var(--color-white);
+  --surface-2: var(--color-gray-100);
+
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
   --dur-fast: 150ms;
   --dur-base: 200ms;
   --dur-emph: 300ms;
   --dur-sheet: 350ms;
-}
-
-[data-theme="dark"] {
-  /* Light-only rebrand: dark theme is intentionally aliased to light
-     to keep semantics consistent across the app. */
-  --background: #F8F7FC;
-  --foreground: #111827;
-  --muted: #F3F0FF;
-  --muted-foreground: #6B7280;
-  --card: #FFFFFF;
-  --card-foreground: #111827;
-  --border: #ECE9F7;
-  --border-strong: #DAD2F2;
-  --input: #FFFFFF;
-  --ring: rgba(139, 92, 246, 0.35);
-
-  --primary: var(--brand-500);
-  --primary-foreground: #FFFFFF;
 }
 
 @theme inline {
@@ -113,6 +103,8 @@
   --color-warning-soft: var(--warning-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
+  --color-promo-pink: var(--color-promo-pink);
+  --color-promo-pink-text: var(--color-promo-pink-text);
 
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
@@ -120,17 +112,20 @@
   --radius-xl: var(--radius-xl);
   --radius-2xl: var(--radius-2xl);
 
-  --font-sans: var(--font-nunito), var(--font-poppins), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-poppins), var(--font-nunito), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-roboto), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-ibm-plex), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 * { box-sizing: border-box; }
+* { -webkit-tap-highlight-color: transparent; }
 
 html {
   scroll-behavior: smooth;
   min-height: 100%;
   color-scheme: light;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
@@ -138,19 +133,35 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-nunito), var(--font-poppins), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-roboto), system-ui, -apple-system, sans-serif;
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  overscroll-behavior-y: contain;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, a[role="button"], nav, header.app-chrome, [data-no-select] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+input, textarea, [contenteditable], .selectable {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 h1, h2, h3, h4, h5, h6, .font-display {
-  font-family: var(--font-poppins), var(--font-nunito), system-ui, sans-serif;
+  font-family: var(--font-ibm-plex), system-ui, sans-serif;
   font-weight: 700;
   letter-spacing: -0.015em;
+  text-wrap: balance;
 }
 
-/* Tabular figures for numeric/money */
+p {
+  text-wrap: pretty;
+}
+
 .tabular,
 .font-tabular {
   font-variant-numeric: tabular-nums;
@@ -162,26 +173,47 @@ h1, h2, h3, h4, h5, h6, .font-display {
 .safe-pb { padding-bottom: env(safe-area-inset-bottom); }
 .safe-px { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
 
-/* Bottom-nav clearance: every (app) main uses this one token */
 .with-bottom-nav { padding-bottom: calc(env(safe-area-inset-bottom) + 5.25rem); }
 @media (min-width: 768px) {
   .with-bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
 }
 
-/* Elevation utilities */
+.page-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-8);
+}
+@media (min-width: 768px) {
+  .page-stack {
+    gap: var(--space-6);
+    padding-top: var(--space-5);
+    padding-bottom: var(--space-10);
+  }
+}
+
 .elev-1 { box-shadow: var(--elev-1); }
 .elev-2 { box-shadow: var(--elev-2); }
 .elev-3 { box-shadow: var(--elev-3); }
 .elev-brand { box-shadow: var(--elev-brand); }
 
-/* Pressed feedback */
 .press {
   transition: transform var(--dur-fast) var(--ease-standard),
               background-color var(--dur-fast) var(--ease-standard);
 }
 .press:active { transform: scale(0.98); }
 
-/* Animations */
+:focus-visible {
+  outline: 2px solid #000000;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+:focus:not(:focus-visible) { outline: none; }
+
+::selection { background: #000000; color: #FFFFFF; }
+
 @keyframes flow {
   0%   { stroke-dashoffset: 1000; }
   100% { stroke-dashoffset: 0; }
@@ -201,17 +233,46 @@ h1, h2, h3, h4, h5, h6, .font-display {
 .skeleton {
   background: linear-gradient(
     90deg,
-    var(--muted) 0%,
-    color-mix(in oklab, var(--muted) 70%, var(--background)) 50%,
-    var(--muted) 100%
+    var(--color-gray-100) 0%,
+    #ececec 50%,
+    var(--color-gray-100) 100%
   );
   background-size: 200% 100%;
   animation: shimmer 1.4s ease-in-out infinite;
 }
 
-::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; }
+@media (min-width: 1024px) {
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #DDDDDD; border-radius: 4px; }
+}
+
+@media (max-width: 1023px) {
+  .bottom-nav { padding-bottom: env(safe-area-inset-bottom); }
+}
+
+@media (min-width: 1024px) {
+  button, [role="button"], .clickable { cursor: pointer; }
+  input, textarea { cursor: text; }
+  body { cursor: default; }
+}
+
+@media (hover: hover) {
+  .btn-primary:hover { background: #222222; transition: background 0.15s; }
+  .btn-outline:hover { background: #000000; color: #FFFFFF; transition: all 0.15s; }
+  .list-item:hover { background: #F9F9F9; cursor: pointer; }
+  .service-icon-item:hover { transform: translateY(-2px); transition: transform 0.15s; }
+  .nav-item:hover { background: #F5F5F5; cursor: pointer; }
+  .text-link:hover { text-decoration: underline; }
+  .keypad-cell:hover { background: #F5F5F5; cursor: pointer; }
+  .quick-action:hover { opacity: 0.85; cursor: pointer; }
+}
+
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+
+.snap-x-mandatory { scroll-snap-type: x mandatory; }
+.snap-start { scroll-snap-align: start; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
@@ -221,7 +282,6 @@ h1, h2, h3, h4, h5, h6, .font-display {
   }
 }
 
-/* ─── Legacy aliases (kept for not-yet-migrated pages) ─── */
 :root {
   --bloom-bg: var(--background);
   --bloom-paper: var(--card);
@@ -237,6 +297,6 @@ h1, h2, h3, h4, h5, h6, .font-display {
 @keyframes spin-slow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .animate-float     { animation: float 4s ease-in-out infinite; }
 .animate-spin-slow { animation: spin-slow 8s linear infinite; }
-.font-display      { font-family: var(--font-poppins), var(--font-nunito), system-ui, sans-serif; letter-spacing: -0.02em; }
-.font-playfair     { font-family: "Playfair Display", Georgia, serif; letter-spacing: -0.01em; }
+.font-display      { font-family: var(--font-ibm-plex), system-ui, sans-serif; letter-spacing: -0.02em; }
+.font-playfair     { font-family: var(--font-ibm-plex), system-ui, sans-serif; letter-spacing: -0.01em; }
 

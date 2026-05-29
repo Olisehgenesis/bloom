@@ -1,20 +1,20 @@
 import type { Metadata } from "next";
-import { Poppins, Nunito_Sans } from "next/font/google";
+import { IBM_Plex_Sans, Roboto } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
 import { ServiceWorkerRegister } from "@/components/ServiceWorkerRegister";
 
-const poppins = Poppins({
-  variable: "--font-poppins",
+const ibmPlexSans = IBM_Plex_Sans({
+  variable: "--font-ibm-plex",
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
-const nunito = Nunito_Sans({
-  variable: "--font-nunito",
+const roboto = Roboto({
+  variable: "--font-roboto",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "700"],
   display: "swap",
 });
 
@@ -29,6 +29,20 @@ export const metadata: Metadata = {
   description: "Bloom — real-time money streaming powered by Celo, Superfluid, and GoodDollar.",
   applicationName: "Bloom",
   manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Bloom",
+    statusBarStyle: "default",
+  },
+  formatDetection: {
+    telephone: false,
+    email: false,
+    address: false,
+  },
+  other: {
+    "talentapp:project_verification":
+      "5eedaccadffc8d38c77e92381ac34bf7849db5cde2d038955a8c2a49bf5d90c58600b6b1b650ef5a785d55b3e82eb34416b121b59b69d5b23cba103cffa1fd44",
+  },
   icons: {
     icon: [
       { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
@@ -65,7 +79,7 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover" as const,
-  themeColor: "#F8F7FC",
+  themeColor: "#FFFFFF",
 };
 
 export default function RootLayout({
@@ -77,7 +91,7 @@ export default function RootLayout({
     <html
       lang="en"
       data-theme="light"
-      className={`${poppins.variable} ${nunito.variable} h-full antialiased`}
+      className={`${ibmPlexSans.variable} ${roboto.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Providers>

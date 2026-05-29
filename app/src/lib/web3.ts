@@ -122,10 +122,20 @@ function shimInjectedProviderEvents() {
   ensure("emit",           () => false);
 }
 
+// Module-level singleton — guarantees the same config object across React
+// re-renders and hot-reloads so wagmi never loses its in-memory connector state.
+let _wagmiConfig: ReturnType<typeof createConfig> | null = null;
+
 export const getWagmiConfig = () => {
+  if (_wagmiConfig) return _wagmiConfig;
   shimInjectedProviderEvents();
   const chains = [celoChain] as const;
   const wcProjectId = process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? "";
+  if (!wcProjectId) {
+    console.warn(
+      "[Bloom] NEXT_PUBLIC_WC_PROJECT_ID is not set — WalletConnect will be disabled.",
+    );
+  }
   const connectors = [
     injected({ shimDisconnect: true }),
     ...(wcProjectId
@@ -159,7 +169,7 @@ export const getWagmiConfig = () => {
   );
 
   try {
-    return createConfig({
+    _wagmiConfig = createConfig({
       chains,
       connectors,
       transports: { [celoChain.id]: transport },
@@ -171,7 +181,7 @@ export const getWagmiConfig = () => {
     });
   } catch (error) {
     console.error("Wagmi config creation failed:", error);
-    return createConfig({
+    _wagmiConfig = createConfig({
       chains,
       connectors: [],
       transports: { [celoChain.id]: transport },
@@ -179,4 +189,5 @@ export const getWagmiConfig = () => {
       ssr: true,
     });
   }
+  return _wagmiConfig!;
 };

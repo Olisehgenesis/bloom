@@ -3,15 +3,15 @@ import type { HTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 const card = tv({
-  base: "rounded-[var(--radius-2xl)] text-[color:var(--card-foreground)]",
+  base: "rounded-[var(--radius-lg)] text-[color:var(--card-foreground)]",
   variants: {
     variant: {
-      surface:     "bg-[color:var(--card)] border border-[color:var(--border)] elev-1",
-      elevated:    "bg-[color:var(--card)] elev-2",
+      surface:     "bg-[color:var(--card)] border border-[color:var(--border)]",
+      elevated:    "bg-[color:var(--card)] border border-[color:var(--border)]",
       outlined:    "bg-transparent border border-[color:var(--border)]",
-      interactive: "bg-[color:var(--card)] border border-[color:var(--border)] press hover:bg-[color:var(--brand-soft)] hover:border-[color:var(--border-strong)] cursor-pointer elev-1",
-      brand:       "bg-[color:var(--brand-soft)] text-[color:var(--brand-600)] border border-transparent",
-      pink:        "bg-[color:var(--accent-pink-soft)] text-[color:var(--accent-pink)] border border-transparent",
+      interactive: "bg-[color:var(--card)] border border-[color:var(--border)] press hover:bg-[color:var(--brand-soft)] hover:border-[color:var(--border-strong)] cursor-pointer",
+      brand:       "bg-[color:var(--brand-soft)] text-[color:var(--color-black)] border border-[color:var(--border)]",
+      pink:        "bg-[color:var(--color-promo-pink)] text-[color:var(--color-black)] border border-[color:var(--border)]",
     },
     padding: {
       none: "",
@@ -48,7 +48,7 @@ export function CardDescription({ className, ...props }: HTMLAttributes<HTMLPara
 }
 
 export function CardContent({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <div className={cn("px-5 py-4", className)} {...props} />;
+  return <div className={cn("px-4 py-4 md:px-5", className)} {...props} />;
 }
 
 export function CardFooter({ className, ...props }: HTMLAttributes<HTMLDivElement>) {

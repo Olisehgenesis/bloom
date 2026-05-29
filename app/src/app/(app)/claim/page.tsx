@@ -31,6 +31,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
+import { useToast } from "@/components/ui/toaster";
 import { tap } from "@/lib/motion";
 import { useWalletSession } from "@/lib/walletSession";
 import { authFetch } from "@/utils/supabase/client";
@@ -64,51 +65,6 @@ const ubiAbi = parseAbi([
   "function checkEntitlement(address _claimer) view returns (uint256)",
   "function claim() returns (bool)",
 ]);
-
-// ─── Notification toaster ────────────────────────────────────────────
-type NotifType = "info" | "success" | "error";
-interface Notif { id: number; text: string; type: NotifType }
-
-function NotifStack({
-  items,
-  onDismiss,
-}: {
-  items: Notif[];
-  onDismiss: (id: number) => void;
-}) {
-  return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex flex-col items-center gap-2 px-4 sm:bottom-6 sm:right-6 sm:left-auto sm:items-end">
-      <AnimatePresence>
-        {items.map((n) => (
-          <motion.div
-            key={n.id}
-            initial={{ opacity: 0, y: 16, scale: 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 8, scale: 0.96 }}
-            transition={{ duration: 0.18 }}
-            className={`pointer-events-auto flex max-w-sm items-center gap-2 rounded-[var(--radius-md)] px-3.5 py-2.5 text-sm shadow-lg backdrop-blur-md ${
-              n.type === "success"
-                ? "bg-emerald-500/95 text-white"
-                : n.type === "error"
-                ? "bg-rose-500/95 text-white"
-                : "bg-[color:var(--card)]/95 text-[color:var(--foreground)] border border-[color:var(--border)]"
-            }`}
-          >
-            <span className="flex-1">{n.text}</span>
-            <button
-              type="button"
-              onClick={() => onDismiss(n.id)}
-              className="opacity-70 hover:opacity-100 text-xs px-1"
-              aria-label="dismiss"
-            >
-              ✕
-            </button>
-          </motion.div>
-        ))}
-      </AnimatePresence>
-    </div>
-  );
-}
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 function fmtGD(value: bigint | null | undefined): string {
@@ -235,24 +191,22 @@ export default function ClaimPage() {
     }
   }, [address, signMessageAsync]);
 
-  // notifications
-  const [notifs, setNotifs] = useState<Notif[]>([]);
-  const notifIdRef = useRef(0);
+  // notifications — routed through the global toaster.
+  const toast = useToast();
+  type NotifType = "info" | "success" | "error";
   const addNotif = useCallback((text: string, type: NotifType = "info") => {
-    const id = ++notifIdRef.current;
-    setNotifs((p) => [...p, { id, text, type }]);
-    return id;
-  }, []);
+    return toast.show({
+      title: text,
+      variant: type === "info" ? "info" : type,
+      duration: 0, // sticky until update/dismiss; caller manages lifecycle
+    });
+  }, [toast]);
   const updateNotif = useCallback((id: number, text: string, type: NotifType) => {
-    setNotifs((p) => p.map((n) => (n.id === id ? { ...n, text, type } : n)));
-  }, []);
+    toast.update(id, { title: text, variant: type === "info" ? "info" : type });
+  }, [toast]);
   const dismissNotif = useCallback((id: number, delay = 0) => {
-    if (delay > 0) {
-      setTimeout(() => setNotifs((p) => p.filter((n) => n.id !== id)), delay);
-    } else {
-      setNotifs((p) => p.filter((n) => n.id !== id));
-    }
-  }, []);
+    toast.dismiss(id, delay);
+  }, [toast]);
 
   // ─── Faucet auto-call ────────────────────────────────────────────
   const [faucetStatus, setFaucetStatus] = useState<
@@ -732,11 +686,6 @@ export default function ClaimPage() {
         </motion.div>
       )}
 
-      <NotifStack
-        items={notifs}
-        onDismiss={(id) => dismissNotif(id)}
-      />
-
       {/* Wrong-chain banner */}
       {wrongChain && (
         <Card className="p-4 mb-4 flex items-start gap-3 border-amber-300 bg-amber-50/50 dark:border-amber-700/40 dark:bg-amber-900/20">
@@ -762,10 +711,12 @@ export default function ClaimPage() {
             PIN
           </label>
           <Input
-            type="password"
+            type="tel"
             inputMode="numeric"
             pattern="[0-9]*"
             minLength={4}
+            autoComplete="one-time-code"
+            enterKeyHint="done"
             value={unlockPin}
             onChange={(e) => setUnlockPin(e.target.value)}
             disabled={unlockLoading}

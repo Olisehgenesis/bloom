@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { NavRail, BottomNav } from "@/components/Nav";
+import { PageTransition } from "@/components/PageTransition";
 
 interface AppShellProps {
   children: ReactNode;
@@ -24,28 +25,23 @@ export function AppShell({ children, topBar, detail, variant = "app" }: AppShell
 
   return (
     <div className="min-h-dvh bg-background text-foreground">
-      <div
-        className="mx-auto grid min-h-dvh w-full max-w-screen-2xl
-                   grid-cols-1
-                   md:grid-cols-[80px_minmax(0,1fr)]
-                   lg:grid-cols-[256px_minmax(0,1fr)]
-                   xl:grid-cols-[256px_minmax(0,1fr)_320px]"
-      >
-        <NavRail className="hidden md:flex" />
+      <NavRail className="hidden lg:flex" />
 
-        <main className="flex min-h-dvh flex-col with-bottom-nav">
-          {topBar}
-          <div className="mx-auto w-full max-w-[640px] md:max-w-[720px] px-4 md:px-6 lg:px-8 flex-1">
-            {children}
-          </div>
-        </main>
+      <main className="flex min-h-dvh flex-col with-bottom-nav lg:ml-[240px] lg:w-[calc(100%-240px)]">
+        {topBar}
+        <div className="mx-auto w-full max-w-[1200px] px-4 md:px-6 lg:px-12 flex-1 flex flex-col">
+          <PageTransition>{children}</PageTransition>
+        </div>
+      </main>
 
-        <aside className="hidden xl:flex flex-col border-l border-[color:var(--border)] p-6">
+      {detail && (
+        <aside className="hidden xl:flex fixed right-0 top-0 h-dvh w-[320px] flex-col border-l border-[color:var(--border)] bg-[color:var(--color-white)] p-6">
           {detail}
         </aside>
-      </div>
+      )}
 
-      <BottomNav className="md:hidden" />
+      <BottomNav className="lg:hidden" />
     </div>
   );
 }
+

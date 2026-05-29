@@ -261,11 +261,15 @@ export default function StreamPage() {
 
   return (
     <>
-      <TopBar title="Create stream" subtitle="Build a continuous payment" showAppControls />
+      <div className="-mx-4 md:-mx-6 lg:-mx-12 lg:bg-[color:var(--color-gray-100)] lg:px-0 lg:py-[60px]">
+        <div className="lg:mx-auto lg:w-[420px] lg:overflow-hidden lg:rounded-[24px] lg:border lg:border-[color:var(--border)] lg:bg-[color:var(--color-white)]">
+          <div className="-mx-4 md:-mx-6 lg:mx-0 bg-[color:var(--color-cream)] px-4 pb-4 pt-2 md:px-6 lg:px-8 lg:pb-6 lg:pt-4">
+            <TopBar title="Send Money" subtitle="Build a continuous payment" />
+          </div>
 
-      <main className="pt-4 flex flex-col gap-5">
+      <main className="-mx-4 md:-mx-6 lg:mx-0 mt-0 rounded-t-[var(--radius-xl)] bg-[color:var(--color-white)] px-4 pb-5 pt-6 md:px-6 lg:px-8 flex flex-col gap-6 lg:rounded-none lg:px-8 lg:pb-8">
         <Card variant="surface" padding="lg">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--primary)]">Stream builder</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-[color:var(--color-gray-400)]">Stream builder</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Create a Bloom streaming payment</h2>
           <p className="mt-2 text-sm leading-6 text-[color:var(--muted-foreground)]">
             Set a recipient, choose a deposit token, and let Bloom manage continuous flows from a single dashboard.
@@ -340,12 +344,14 @@ export default function StreamPage() {
         {/* Success */}
         {bloom.step === "done" && (
           <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-            className="bg-[color:var(--brand-soft)] border border-[color:var(--primary)]/30 rounded-2xl p-6 text-center">
-            <CheckCircle2 size={36} className="text-[color:var(--primary)] mx-auto mb-3" />
-            <div className="text-base font-bold text-foreground mb-1">
+            className="rounded-[var(--radius-lg)] border border-[color:var(--border)] bg-[color:var(--color-white)] p-6 text-center">
+            <div className="mx-auto mb-3 grid h-14 w-14 place-items-center rounded-full border border-[color:var(--border)] bg-[color:var(--color-gray-100)]">
+              <CheckCircle2 size={28} className="text-[color:var(--color-black)]" />
+            </div>
+            <div className="text-2xl font-bold text-foreground mb-1 font-display">
               {depositOnly ? "Deposit complete!" : "Stream started!"}
             </div>
-            <div className="text-xs text-[color:var(--muted-foreground)]">
+            <div className="mx-auto max-w-[280px] text-sm text-[color:var(--muted-foreground)]">
               {depositOnly
                 ? `${fmtGD(gdTotal)} credited to your Bloom balance.`
                 : `~${fmtGPS(gdPerSecond)} flowing to `}
@@ -354,7 +360,7 @@ export default function StreamPage() {
               )}
             </div>
             <button onClick={() => { bloom.reset(); setAmount(""); setCustomAddr(""); }}
-              className="mt-4 text-xs text-[color:var(--primary)] font-semibold underline underline-offset-2">
+              className="btn-outline mt-5 inline-flex h-11 items-center justify-center rounded-[var(--radius-md)] border-[1.5px] border-[color:var(--color-black)] px-5 text-sm font-semibold text-[color:var(--color-black)] lg:mx-auto lg:w-full lg:max-w-[400px]">
               {depositOnly ? "Deposit again" : "Start another stream"}
             </button>
           </motion.div>
@@ -414,6 +420,8 @@ export default function StreamPage() {
           />
         )}
       </main>
+        </div>
+      </div>
     </>
   );
 }

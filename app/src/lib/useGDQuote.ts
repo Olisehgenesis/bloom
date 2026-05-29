@@ -14,6 +14,8 @@ const ZERO_ADDR    = "0x0000000000000000000000000000000000000000" as `0x${string
 // G$ and intermediates are all 18 decimals on Celo; USDC is 6.
 const CUSD_DECIMALS = 18;
 const GD_DECIMALS   = 18;
+const DEBUG_QUOTES = process.env.NEXT_PUBLIC_DEBUG_QUOTES === "1";
+const loggedNoRoute = new Set<string>();
 
 function decimalsOf(addr: string): number {
   const t = CELO_TOKENS.find(t => t.address.toLowerCase() === addr.toLowerCase());
@@ -329,7 +331,9 @@ export function useGDQuote(tokenAddress: string): GDQuote {
     const [d0, d1]   = pairDecimals(addr, tokenDec, GOOD_DOLLAR as string, GD_DECIMALS);
     const gdPerToken = sqrtPriceToRatio(directSlot0[0], d0, d1, gdIsToken1);
     const fee1 = FEE_TIERS[directIdx];
-    console.debug("[useGDQuote] route: direct", { addr, fee1, gdPerToken });
+    if (DEBUG_QUOTES) {
+      console.debug("[useGDQuote] route: direct", { addr, fee1, gdPerToken });
+    }
     return { gdPerToken, loading: false, error: false, routeType: "direct", fee1 };
   }
 
@@ -345,27 +349,32 @@ export function useGDQuote(tokenAddress: string): GDQuote {
     const gdPerToken       = cusdPerToken * gdPerCusd;
     const fee1 = FEE_TIERS[tokenCusdIdx];
     const fee2 = FEE_TIERS[cusdGdIdx];
-    console.debug("[useGDQuote] route: multihop via cUSD", { addr, fee1, fee2, cusdPerToken, gdPerCusd, gdPerToken });
+    if (DEBUG_QUOTES) {
+      console.debug("[useGDQuote] route: multihop via cUSD", { addr, fee1, fee2, cusdPerToken, gdPerCusd, gdPerToken });
+    }
     return { gdPerToken, loading: false, error: false, routeType: "multihop", fee1, fee2, intermediate: CUSD_ADDRESS };
   }
 
   // ── No route found ────────────────────────────────────────────────────────
   // Spell out the state so it shows inline in the console (no expand needed).
-  console.warn(
-    "[useGDQuote] NO ROUTE", addr,
-    "\n  isCELO=", isCELO, "isCUSD=", isCUSD, "isGD=", isGD,
-    "\n  directFullyLoaded=", directFullyLoaded,
-    "\n  directAddrs=", JSON.stringify(directAddrs),
-    "\n  probeMultihop=", probeMultihop,
-    "\n  cusdGdAddrs=", JSON.stringify(cusdGdAddrs),
-    "\n  tokenCusdAddrs=", JSON.stringify(tokenCusdAddrs),
-    "\n  cusdGdIdx=", cusdGdIdx, "tokenCusdIdx=", tokenCusdIdx,
-    "\n  raw directPools status=", directPools?.map(r => r?.status),
-    "\n  raw cusdGdPools status=", cusdGdPools?.map(r => r?.status),
-    "\n  raw tokenCusdPools status=", tokenCusdPools?.map(r => r?.status),
-    "\n  raw cusdGdPools result=", JSON.stringify(cusdGdPools?.map(r => r?.result)),
-    "\n  raw tokenCusdPools result=", JSON.stringify(tokenCusdPools?.map(r => r?.result)),
-  );
+  if (DEBUG_QUOTES && !loggedNoRoute.has(addr.toLowerCase())) {
+    loggedNoRoute.add(addr.toLowerCase());
+    console.warn(
+      "[useGDQuote] NO ROUTE", addr,
+      "\n  isCELO=", isCELO, "isCUSD=", isCUSD, "isGD=", isGD,
+      "\n  directFullyLoaded=", directFullyLoaded,
+      "\n  directAddrs=", JSON.stringify(directAddrs),
+      "\n  probeMultihop=", probeMultihop,
+      "\n  cusdGdAddrs=", JSON.stringify(cusdGdAddrs),
+      "\n  tokenCusdAddrs=", JSON.stringify(tokenCusdAddrs),
+      "\n  cusdGdIdx=", cusdGdIdx, "tokenCusdIdx=", tokenCusdIdx,
+      "\n  raw directPools status=", directPools?.map(r => r?.status),
+      "\n  raw cusdGdPools status=", cusdGdPools?.map(r => r?.status),
+      "\n  raw tokenCusdPools status=", tokenCusdPools?.map(r => r?.status),
+      "\n  raw cusdGdPools result=", JSON.stringify(cusdGdPools?.map(r => r?.result)),
+      "\n  raw tokenCusdPools result=", JSON.stringify(tokenCusdPools?.map(r => r?.result)),
+    );
+  }
   return { gdPerToken: 0, loading: false, error: true, routeType: null };
 }
 

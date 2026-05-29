@@ -4,24 +4,29 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAccount, useConnect, useDisconnect } from "wagmi";
 import {
-  Home, Zap, BarChart2, RefreshCw, Copy, LogOut, Wallet, Settings, Compass, Target, History, User, Gift,
+  Home, Copy, LogOut, Wallet, Settings, User, Bell, QrCode, Receipt,
 } from "lucide-react";
 import { useState, useMemo } from "react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import { tap } from "@/lib/motion";
 import { useGoodDollarVerified } from "@/lib/useGoodDollarVerified";
 
+/**
+ * Bottom-nav routes. Every entry MUST resolve to a real page in
+ * `src/app/(app)/<segment>/page.tsx`, otherwise taps fall through to the
+ * not-found route and instantly break the "native app" feeling.
+ */
 const NAV = [
-  { href: "/dashboard", icon: Home,    label: "Home" },
-  { href: "/claim",     icon: Gift,    label: "Claim" },
-  { href: "/goals",     icon: Target,  label: "Goals" },
-  { href: "/history",   icon: History, label: "History" },
-  { href: "/account",   icon: User,    label: "Account" },
+  { href: "/dashboard", icon: Home,     label: "Home" },
+  { href: "/stream",    icon: Receipt,  label: "Transactions" },
+  { href: "/claim",     icon: QrCode,   label: "Scan" },
+  { href: "/compound",  icon: Bell,     label: "Alerts" },
+  { href: "/account",   icon: User,     label: "Profile" },
 ];
 
-/* ─── Bottom navigation (Material 3 NavigationBar) ─── */
 export function BottomNav({ className }: { className?: string }) {
   const path = usePathname();
 
@@ -29,44 +34,59 @@ export function BottomNav({ className }: { className?: string }) {
     <nav
       aria-label="Primary"
       className={cn(
-        "fixed inset-x-0 bottom-0 z-50",
-        "border-t border-[color:var(--border)] bg-[color:var(--card)]/95 backdrop-blur-xl",
-        "safe-pb",
+        "bottom-nav fixed inset-x-0 bottom-0 z-50 select-none",
+        "h-[var(--nav-height)] border-t border-[color:var(--border)] bg-[color:var(--card)]",
         className,
       )}
     >
-      <ul className="mx-auto flex max-w-[640px] items-stretch justify-around px-2 py-1.5">
+      <ul className="mx-auto flex h-[var(--nav-height)] max-w-[640px] items-center justify-around px-2">
         {NAV.map(({ href, icon: Icon, label }) => {
           const active = path === href || (href !== "/" && path?.startsWith(href));
+          const centerAction = href === "/claim";
           return (
             <li key={href} className="flex-1">
               <Link
                 href={href}
-                onClick={() => tap()}
+                onClick={() => tap(8)}
                 aria-label={label}
                 aria-current={active ? "page" : undefined}
-                className="group flex h-14 min-w-[56px] flex-col items-center justify-center gap-0.5 px-3 py-1 press"
+                className={cn(
+                  "group relative mx-auto flex min-w-[56px] flex-col items-center justify-center px-2",
+                  centerAction ? "h-[72px] -mt-3" : "h-[64px]",
+                )}
               >
-                <span
-                  className={cn(
-                    "relative grid h-8 w-16 place-items-center rounded-full transition-colors duration-200",
-                    active ? "bg-[color:var(--brand-soft)]" : "bg-transparent",
-                  )}
-                >
-                  <Icon
-                    size={22}
-                    strokeWidth={active ? 2.2 : 1.7}
-                    className={active ? "text-[color:var(--primary)]" : "text-[color:var(--muted-foreground)]"}
-                  />
+                <span className={cn("relative inline-flex", centerAction && "grid h-14 w-14 place-items-center rounded-full bg-[color:var(--color-black)]") }>
+                  <motion.span
+                    whileTap={{ scale: 0.9 }}
+                    transition={{ type: "spring", damping: 18, stiffness: 400 }}
+                    className="relative z-10 inline-flex"
+                  >
+                    <Icon
+                      size={24}
+                      strokeWidth={1.8}
+                      className={cn(
+                        centerAction
+                          ? "text-[color:var(--color-white)]"
+                          : active
+                            ? "text-[color:var(--color-black)]"
+                            : "text-[color:var(--color-gray-400)]",
+                      )}
+                    />
+                  </motion.span>
                 </span>
-                <span
-                  className={cn(
-                    "text-[11px] font-medium leading-none",
-                    active ? "text-[color:var(--foreground)]" : "text-[color:var(--muted-foreground)]",
-                  )}
-                >
-                  {label}
-                </span>
+                {!centerAction && (
+                  <>
+                    <span
+                      className={cn(
+                        "mt-1 font-sans text-[11px] leading-none transition-colors",
+                        active ? "text-[color:var(--color-black)]" : "text-[color:var(--color-gray-400)]",
+                      )}
+                    >
+                      {label}
+                    </span>
+                    {active && <span className="mt-1 inline-block h-1 w-1 rounded-full bg-[color:var(--color-black)]" />}
+                  </>
+                )}
               </Link>
             </li>
           );
@@ -79,27 +99,28 @@ export function BottomNav({ className }: { className?: string }) {
 /* ─── Side navigation rail / sidebar ─── */
 export function NavRail({ className }: { className?: string }) {
   const path = usePathname();
+  const userName = "My Account";
   return (
     <aside
       className={cn(
-        "sticky top-0 h-dvh flex-col border-r border-[color:var(--border)] bg-[color:var(--background)]",
-        "py-4 px-3 lg:px-4",
+        "fixed left-0 top-0 h-dvh w-[240px] flex-col border-r border-[color:var(--border)] bg-[color:var(--color-white)]",
+        "pt-8",
         className,
       )}
     >
-      <Link href="/" className="mb-6 flex items-center gap-3 px-2 lg:px-3">
+      <Link href="/" className="mb-10 flex items-center gap-3 px-5">
         <Image
           src="/icon-192.png"
           alt="Bloom"
-          width="40"
-          height="40"
+          width="28"
+          height="28"
           priority
-          className="h-10 w-10 rounded-[var(--radius-md)]"
+          className="h-7 w-7 rounded-full"
         />
-        <span className="hidden lg:inline text-base font-semibold tracking-tight">Bloom</span>
+        <span className="font-display text-[20px] font-bold tracking-tight text-[color:var(--color-black)]">Bloom</span>
       </Link>
 
-      <ul className="flex flex-1 flex-col gap-1">
+      <ul className="flex flex-1 flex-col gap-2 px-3">
         {NAV.map(({ href, icon: Icon, label }) => {
           const active = path === href || (href !== "/" && path?.startsWith(href));
           return (
@@ -108,27 +129,33 @@ export function NavRail({ className }: { className?: string }) {
                 href={href}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium press",
+                  "nav-item mx-auto flex h-12 w-[200px] items-center gap-3 rounded-[10px] px-4 font-display text-[15px] font-medium press transition-colors",
                   active
-                    ? "bg-[color:var(--brand-soft)] text-[color:var(--primary)]"
-                    : "text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)] hover:text-[color:var(--foreground)]",
+                    ? "bg-[color:var(--color-black)] text-[color:var(--color-white)]"
+                    : "text-[color:var(--color-gray-400)]",
                 )}
               >
-                <Icon size={20} strokeWidth={active ? 2.2 : 1.7} />
-                <span className="hidden lg:inline">{label}</span>
+                <Icon size={20} strokeWidth={1.8} />
+                <span>{label}</span>
               </Link>
             </li>
           );
         })}
       </ul>
 
-      <Link
-        href="/superadmin"
-        className="mt-2 flex items-center gap-3 rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium text-[color:var(--muted-foreground)] hover:bg-[color:var(--muted)]"
-      >
-        <Settings size={20} strokeWidth={1.7} />
-        <span className="hidden lg:inline">Settings</span>
-      </Link>
+      <div className="absolute inset-x-0 bottom-0 border-t border-[color:var(--border)] px-5 py-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="grid h-9 w-9 place-items-center rounded-full bg-[color:var(--color-gray-100)]">
+              <User size={16} className="text-[color:var(--color-black)]" />
+            </div>
+            <span className="font-display text-[14px] font-semibold text-[color:var(--color-black)]">{userName}</span>
+          </div>
+          <Link href="/superadmin" aria-label="Settings" className="grid h-9 w-9 place-items-center rounded-full bg-[color:var(--color-gray-100)] text-[color:var(--color-black)]">
+            <Settings size={16} strokeWidth={1.8} />
+          </Link>
+        </div>
+      </div>
     </aside>
   );
 }

@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Bloom — Written System Description</title>
+<style>
+  :root { --ink:#1a1430; --accent:#7c3aed; --muted:#6b7280; --rule:#ece9f7; }
+  * { box-sizing: border-box; }
+  @page { size: A4; margin: 18mm 16mm; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    color: var(--ink);
+    max-width: 820px;
+    margin: 32px auto;
+    padding: 0 28px 64px;
+    line-height: 1.5;
+    font-size: 12.5px;
+  }
+  header { border-bottom: 2px solid var(--accent); padding-bottom: 10px; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); margin: 4px 0 0; font-size: 12px; }
+  .meta { font-size: 11.5px; color: var(--muted); margin: 8px 0 0; }
+  h2 { font-size: 14.5px; margin: 22px 0 6px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.4px; }
+  h3 { font-size: 12.5px; margin: 14px 0 4px; }
+  p, li { font-size: 12px; }
+  ul, ol { margin: 4px 0 8px 18px; padding: 0; }
+  li { margin: 2px 0; }
+  code { background:#f5f3ff; padding:1px 5px; border-radius:4px; font-size:11.5px; }
+  table { width:100%; border-collapse: collapse; font-size: 11.5px; margin: 6px 0 12px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--rule); vertical-align: top; }
+  th { background:#f5f3ff; }
+  .grid2 { display:grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .callout { background:#faf9ff; border:1px solid var(--rule); border-radius:8px; padding:10px 12px; margin:8px 0; font-size:11.5px; }
+  .pagebreak { page-break-before: always; }
+  footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid var(--rule); font-size: 10.5px; color: var(--muted); text-align: center; }
+  @media print {
+    body { margin: 0; padding: 0; max-width: 100%; font-size: 11.5px; }
+    h2 { break-after: avoid; }
+    table, .callout { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Bloom — Written System Description</h1>
+  <p class="sub">Real-time money streaming on Celo, powered by Superfluid and GoodDollar.</p>
+  <p class="meta">
+    Applicant: <strong>Mwijusya Oliseh</strong> &nbsp;·&nbsp; System: <strong>Bloom</strong> &nbsp;·&nbsp;
+    Ref: MoICT&amp;NG/DIEG/2025-26/001-AF &nbsp;·&nbsp; Submission: May 2026
+  </p>
+</header>
+
+<!-- ====================== PAGE 1 ====================== -->
+<h2>1. Executive Summary</h2>
+<p>
+  <strong>Bloom</strong> turns one-off payments into continuous, per-second money streams. A sender — an
+  employer, parent, diaspora relative, NGO, or Government programme — funds an account once and value
+  flows to the recipient every second of every day for a chosen duration. Recipients off-ramp to MTN
+  or Airtel Mobile Money whenever they need cash. Bloom is built on the <strong>Celo</strong>
+  blockchain (a mobile-first, low-fee, carbon-negative Layer 1 designed for Africa), uses
+  <strong>Superfluid</strong> for the streaming primitive, <strong>GoodDollar (G$)</strong> as a
+  stable unit of account, <strong>Uniswap&nbsp;V3</strong> for token routing, and <strong>Fonbnk</strong>
+  for mobile-money on/off-ramps. The application is a Progressive Web App (PWA) — installable on
+  low-end Android phones, works offline for viewing, and signs in with a wallet (no bank account
+  required).
+</p>
+
+<h2>2. Problem &amp; Motivation</h2>
+<p>
+  Most payments in Uganda — salaries, allowances, school fees, family upkeep, pensions, social
+  cash transfers (SAGE, NUSAF), and gig/freelance income — arrive as large, infrequent lump sums.
+  Workers wait a full month for pay, parents send school fees in one painful transfer, diaspora
+  relatives wire money once and hope it lasts, and beneficiaries of Government or NGO programmes
+  queue for batched payouts that lose value to agent fees. Between payments, people run out of
+  cash for daily needs and fall back on predatory short-term lenders. Mobile money solved
+  <em>access</em> to digital value but not <em>cadence</em> — funds still move as discrete,
+  all-or-nothing transfers. Bloom closes that gap.
+</p>
+
+<h2>3. Solution Overview</h2>
+<div class="grid2">
+  <div>
+    <h3>What Bloom does</h3>
+    <ul>
+      <li>Accepts deposits in any supported token, or directly from MTN/Airtel Mobile Money via Fonbnk.</li>
+      <li>Auto-swaps the deposit to G$ through Uniswap V3 (single-hop or CELO two-hop).</li>
+      <li>Opens a Superfluid stream of G$ to one or many recipients for a chosen duration.</li>
+      <li>Lets recipients watch their balance increase per second and off-ramp to mobile money on demand.</li>
+      <li>Records every deposit, swap, stream and claim on the public Celo ledger — auditable end-to-end.</li>
+    </ul>
+  </div>
+  <div>
+    <h3>Why blockchain</h3>
+    <ul>
+      <li><strong>Per-second value transfer</strong> is only practical on a programmable ledger.</li>
+      <li><strong>Immutable audit trail</strong> for every shilling — no bespoke reporting tools.</li>
+      <li><strong>Sybil-resistant identity</strong> via GoodDollar face verification eliminates ghost recipients.</li>
+      <li><strong>Self-custody</strong>: senders and recipients hold their own keys; Bloom never touches funds.</li>
+      <li><strong>Low fees</strong>: Celo transactions cost a fraction of a US cent.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ====================== PAGE 2 ====================== -->
+<div class="pagebreak"></div>
+
+<h2>4. System Architecture</h2>
+
+<h3>4.1 Tiers</h3>
+<table>
+  <tr><th>Tier</th><th>Stack</th><th>Responsibility</th></tr>
+  <tr><td>Client</td><td>Next.js 16 · React 19 · Tailwind v4 · wagmi/viem · WalletConnect</td><td>PWA UI, wallet connection, transaction signing prompts, offline-capable shell.</td></tr>
+  <tr><td>Application</td><td>Next.js API Routes on Vercel Edge (Node 20)</td><td>SIWE auth, Fonbnk widget URL signing (HS256 JWT), G$ quote helpers. Stateless.</td></tr>
+  <tr><td>Data</td><td>Supabase (managed Postgres, EU region) with Row-Level Security</td><td>Single <code>wallets</code> table mapping address ↔ session. No PII stored.</td></tr>
+  <tr><td>Blockchain</td><td>Celo Mainnet L1 — BloomProxy (UUPS), Superfluid Host, Uniswap V3, GoodDollar</td><td>Custody-free deposit, swap, stream and identity logic.</td></tr>
+  <tr><td>External rails</td><td>Fonbnk (MTN MoMo · Airtel Money), GoodDollar Face Verification</td><td>UGX on/off-ramp and Sybil-resistant proof-of-personhood.</td></tr>
+</table>
+
+<h3>4.2 Key on-chain addresses (Celo Mainnet)</h3>
+<table>
+  <tr><th>Contract</th><th>Address</th></tr>
+  <tr><td>BloomProxy (entry point)</td><td><code>0x754BeaE204d91aD6bFf2f5eED0fB4D6fD5e0c89d</code></td></tr>
+  <tr><td>BloomV2 (implementation)</td><td><code>0xd79aB6Efda8192D5E715d6bd975042f96F098F1F</code></td></tr>
+  <tr><td>GoodDollar (G$) token</td><td><code>0x62B8B11039FcfE5aB0C56E502b1C372A3d2a9c7A</code></td></tr>
+  <tr><td>Uniswap V3 Factory</td><td><code>0xAfE208a311B21f13EF87E33A90049fC17A7acDEc</code></td></tr>
+  <tr><td>Uniswap V3 SwapRouter02</td><td><code>0x5615CDAb10dc425a742d643d949a7F474C01abc4</code></td></tr>
+</table>
+
+<h3>4.3 Deposit and stream flow</h3>
+<ol>
+  <li><strong>Quote</strong> — the PWA calls Uniswap V3 Factory off-chain to find a pool (tokenIn → G$ direct, or tokenIn → CELO → G$ two-hop) and reads <code>slot0()</code> to estimate <code>minGDOut</code>.</li>
+  <li><strong>Approve</strong> — the user signs an ERC-20 <code>approve()</code> letting BloomProxy spend their <code>tokenIn</code>.</li>
+  <li><strong>Deposit</strong> — a single call to <code>bloom.deposit(token, amount, splitBps, minGDOut)</code> pulls the token, swaps to G$ via SwapRouter02, and credits the user's Bloom balance.</li>
+  <li><strong>Stream</strong> — the user calls <code>bloom.startStream(recipient, duration)</code>, which opens a Superfluid flow at <code>flowRate = balance ÷ duration</code> seconds.</li>
+  <li><strong>Claim / off-ramp</strong> — the recipient's G$ balance accrues per second and can be redeemed to UGX via Fonbnk at any time.</li>
+</ol>
+
+<div class="callout">
+  <strong>Mobile-money top-up:</strong> the PWA requests a signed Fonbnk widget URL from a Next.js API
+  route that mints a short-lived JWT containing the user's wallet address. Fonbnk delivers the
+  purchased token <em>directly</em> to that wallet — no server-side correlation, no custody risk.
+</div>
+
+<!-- ====================== PAGE 3 ====================== -->
+<div class="pagebreak"></div>
+
+<h2>5. Technology Stack</h2>
+<table>
+  <tr><th>Area</th><th>Choice</th></tr>
+  <tr><td>Primary languages</td><td>TypeScript (frontend &amp; APIs), Solidity (smart contracts)</td></tr>
+  <tr><td>Frontend</td><td>Next.js 16 App Router, React 19, Tailwind CSS v4, Framer Motion, PWA manifest + service worker</td></tr>
+  <tr><td>Wallet / Web3</td><td>wagmi v3, viem v2, WalletConnect Ethereum Provider</td></tr>
+  <tr><td>Backend / APIs</td><td>Next.js API Routes on Vercel Edge; SIWE (EIP-4361); JWT (HS256) for Fonbnk widget URL signing</td></tr>
+  <tr><td>Database</td><td>Supabase Postgres (EU region) with <code>@supabase/ssr</code>, Row-Level Security</td></tr>
+  <tr><td>Smart contracts</td><td>UUPS upgradeable BloomV2 + Superfluid CFA + GoodDollar SuperToken + Uniswap V3 Router02</td></tr>
+  <tr><td>Identity</td><td>GoodDollar Citizen SDK (face-verification proof-of-personhood)</td></tr>
+  <tr><td>On/off-ramp</td><td>Fonbnk widget (MTN MoMo, Airtel Money)</td></tr>
+  <tr><td>Hosting</td><td>Vercel (edge), Supabase (managed Postgres), Celo Mainnet (smart contracts)</td></tr>
+  <tr><td>Version control / CI</td><td>GitHub + Vercel CI/CD (auto preview deploys per PR)</td></tr>
+</table>
+
+<h2>6. Security &amp; Data Protection</h2>
+<table>
+  <tr><th>Control</th><th>Implementation</th></tr>
+  <tr><td>Authentication</td><td>Sign-In-With-Ethereum (EIP-4361). No passwords. HttpOnly · Secure · SameSite=Lax session cookies.</td></tr>
+  <tr><td>Authorization</td><td>Supabase Row-Level Security on every table; on-chain admin functions guarded by Ownable + UUPS upgrade controls.</td></tr>
+  <tr><td>Transport</td><td>TLS 1.3 end-to-end (Vercel, Supabase). HSTS enabled.</td></tr>
+  <tr><td>Encryption at rest</td><td>Supabase disk-level encryption; Vercel encrypted env-var store for secrets (Fonbnk signing key, Supabase service role).</td></tr>
+  <tr><td>Key custody</td><td>Self-custodial — user private keys never leave the wallet. Bloom holds no funds.</td></tr>
+  <tr><td>Sybil resistance</td><td>GoodDollar face verification per recipient — directly applicable to anti-ghost-beneficiary controls in cash-transfer programmes.</td></tr>
+  <tr><td>Audit logging</td><td>On-chain events (immutable, publicly queryable) + Vercel request logs (90-day retention).</td></tr>
+  <tr><td>DPA 2019 alignment</td><td>Minimal PII collection (wallet address only), EU data residency, user-controlled wallet identity, right-to-erasure honoured by session deletion.</td></tr>
+</table>
+
+<h2>7. Interoperability</h2>
+<ul>
+  <li><strong>RESTful API</strong> — Next.js API routes expose JSON endpoints (e.g. <code>/api/auth/siwe</code>, <code>/api/fonbnk/widget-url</code>, <code>/api/wallet</code>).</li>
+  <li><strong>Mobile money</strong> — live with MTN MoMo and Airtel Money via Fonbnk; covers all major Uganda telcos.</li>
+  <li><strong>NIRA / National ID</strong> — NIN can be bound to a wallet via a one-time attestation endpoint (KYC tier upgrade), without storing the NIN itself.</li>
+  <li><strong>URA</strong> — disbursement history is exportable as CSV or via REST for tax-compliant reporting.</li>
+  <li><strong>NITA-U</strong> — the stateless API tier can be redeployed behind NITA-U gateway / private cloud for inter-agency integration.</li>
+  <li><strong>Standards</strong> — EIP-4361 (SIWE), ERC-20, ERC-777/4626-style flows via Superfluid, OAuth2/JWT for partner integrations.</li>
+</ul>
+
+<!-- ====================== PAGE 4 ====================== -->
+<div class="pagebreak"></div>
+
+<h2>8. Use Cases</h2>
+<h3>8.1 Citizen &amp; private use</h3>
+<ul>
+  <li><strong>Salary smoothing</strong> — employers stream monthly pay continuously instead of one lump on payday.</li>
+  <li><strong>Family upkeep / diaspora remittances</strong> — senders abroad stream school fees and groceries directly to relatives' wallets, who off-ramp to MoMo as needed.</li>
+  <li><strong>Freelancer &amp; gig payments</strong> — clients pay developers, designers and drivers per second over a project's duration; disputes drop because work and pay are in sync.</li>
+  <li><strong>Rent &amp; subscriptions</strong> — tenants stream rent daily; landlords get predictable cash-flow and instant arrears visibility.</li>
+</ul>
+
+<h3>8.2 Government &amp; institutional use</h3>
+<ul>
+  <li><strong>Social cash transfers (SAGE, NUSAF, emergency relief)</strong> — Government funds a Bloom stream once, beneficiaries receive value continuously, every transfer is on-chain auditable, and Sybil-resistant identity prevents duplicates and ghost beneficiaries.</li>
+  <li><strong>Civil-servant allowances</strong> — per-diems, field allowances and per-hour payments streamed in real time, reducing reconciliation overhead.</li>
+  <li><strong>Pensions</strong> — continuous, transparent pension disbursement with on-chain proof-of-life via periodic GoodDollar re-verification.</li>
+  <li><strong>NGO &amp; donor programmes</strong> — donors fund a programme once; recipients receive verifiable, time-bounded streams; donors can audit utilisation in real time.</li>
+</ul>
+
+<h2>9. Deployment &amp; Current Status</h2>
+<ul>
+  <li>Live on <strong>Celo Mainnet</strong> since May 2026.</li>
+  <li>Open beta accessible at <code>https://bloom-app.vercel.app</code>.</li>
+  <li>Pilots in progress: internal team stipends (Smart Tickets Uganda), diaspora-to-family remittances (UK → Kampala), and freelancer payouts.</li>
+  <li>No formal Government pilot yet — Bloom is actively seeking a Government counterpart for a continuous social-cash-transfer pilot.</li>
+</ul>
+
+<h2>10. Scalability &amp; Performance</h2>
+<table>
+  <tr><th>Dimension</th><th>Capacity</th></tr>
+  <tr><td>Concurrent web users</td><td>5,000+ (Vercel Edge auto-scales horizontally; PWA is mostly client-side).</td></tr>
+  <tr><td>On-chain throughput</td><td>Celo block time ≈ 5 s; ~1,000 TPS theoretical; per-stream cost is one-time (no per-second tx — Superfluid flowRate is a single state variable).</td></tr>
+  <tr><td>Transaction cost</td><td>Fraction of a US cent per deposit/stream; affordable at programme scale.</td></tr>
+  <tr><td>Database load</td><td>Negligible — only wallet ↔ session rows. Sub-second p99 reads.</td></tr>
+</table>
+
+<h2>11. Roadmap</h2>
+<ul>
+  <li><strong>Q3 2026</strong> — USSD companion (Africa's Talking) for feature-phone access; multi-recipient batch streams.</li>
+  <li><strong>Q4 2026</strong> — NIRA NIN attestation API; URA-format disbursement export; pilot with a Government social-protection programme.</li>
+  <li><strong>Q1 2027</strong> — Operator console for programme administrators (CSV upload of beneficiary lists, role-based access, real-time dashboard).</li>
+  <li><strong>Q2 2027</strong> — Penetration test &amp; security audit by an independent CREST-accredited firm; ISO 27001 readiness assessment.</li>
+</ul>
+
+<!-- ====================== PAGE 5 ====================== -->
+<div class="pagebreak"></div>
+
+<h2>12. Team</h2>
+<table>
+  <tr><th>Name</th><th>Role</th><th>Background</th></tr>
+  <tr><td>Mwijusya Oliseh</td><td>Founder &amp; Lead Developer</td><td>Full-stack &amp; smart-contract engineer; led architecture, Solidity contracts, PWA front-end, and on/off-ramp integrations.</td></tr>
+  <tr><td>Samuel</td><td>Secondary contact / Operations</td><td>User onboarding, pilot coordination, mobile-money partner liaison.</td></tr>
+</table>
+<p>Both team members are Ugandan citizens. Bloom is 100% Ugandan-owned and is not a joint venture with a foreign firm.</p>
+
+<h2>13. Intellectual Property</h2>
+<ul>
+  <li>All application code, smart-contract designs and product IP are owned exclusively by the applicant.</li>
+  <li>Third-party dependencies are used under their respective open-source licences (MIT, Apache-2.0, GPL-2.0 for some Uniswap libraries) and do not encumber Bloom's IP.</li>
+  <li>Submission to this Showcase does not transfer any rights to Government, in line with the Showcase guidance document.</li>
+</ul>
+
+<h2>14. Risks &amp; Mitigations</h2>
+<table>
+  <tr><th>Risk</th><th>Mitigation</th></tr>
+  <tr><td>Token price volatility against UGX</td><td>G$ used as accounting unit; recipients can off-ramp instantly; future support for cUSD streams.</td></tr>
+  <tr><td>Smart-contract vulnerability</td><td>UUPS upgradeability + planned independent audit; minimal admin surface; non-custodial design.</td></tr>
+  <tr><td>Mobile-money partner downtime</td><td>Fonbnk supports multiple telcos; users retain on-chain balance independent of any ramp.</td></tr>
+  <tr><td>User key loss</td><td>Wallet recovery flows (WalletConnect / social-recovery wallets) recommended on onboarding.</td></tr>
+  <tr><td>Regulatory uncertainty</td><td>Active engagement with regulators; DPA 2019 alignment; ready to integrate with Bank of Uganda sandbox frameworks.</td></tr>
+</table>
+
+<h2>15. Why Bloom Fits the Showcase</h2>
+<ul>
+  <li><strong>Working prototype, live on mainnet</strong> — not a concept; demonstrable end-to-end today.</li>
+  <li><strong>Direct Government applicability</strong> — continuous social cash transfers, anti-ghost-beneficiary identity, immutable audit trail, mobile-money rails already integrated.</li>
+  <li><strong>Citizen-first design</strong> — works on the phones citizens already carry, in the wallets they already use (or can install in seconds), with the off-ramps they already trust.</li>
+  <li><strong>Built in Uganda by Ugandans</strong> — fully indigenous IP, ready to scale with a Government partner.</li>
+</ul>
+
+<footer>
+  Confidential — submitted under the MoICT&amp;NG Government Systems Prototype Showcase 2026.
+  &nbsp;·&nbsp; Bloom is a registered work of Mwijusya Oliseh, Kampala, Uganda.
+</footer>
+
+</body>
+</html>

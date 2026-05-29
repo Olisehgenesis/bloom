@@ -7,7 +7,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 // Routes under these prefixes require an authenticated session
 // (either a Supabase session or a signed wallet session cookie).
-const PROTECTED_PREFIXES = ["/dashboard", "/stream", "/compound", "/superadmin"];
+const PROTECTED_PREFIXES = ["/dashboard", "/stream", "/compound", "/superadmin", "/account", "/claim"];
 
 export const createClient = async (request: NextRequest) => {
   let supabaseResponse = NextResponse.next({
